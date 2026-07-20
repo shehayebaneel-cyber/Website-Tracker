@@ -1,0 +1,30 @@
+# Render blueprint for Website Tracker (single web service serving API + built SPA).
+# The web app is built and served by the Express server on the same origin, so
+# the session cookie works without cross-site config.
+#
+# Before first deploy: create a Neon Postgres database and set DATABASE_URL below
+# (Render dashboard → Environment). JWT_SECRET is generated automatically.
+services:
+  - type: web
+    name: website-tracker
+    runtime: node
+    region: frankfurt # closest to Lebanon; change if preferred
+    plan: starter
+    buildCommand: >-
+      cd web && npm install && npm run build &&
+      cd ../server && npm install && npm run build
+    startCommand: cd server && npx prisma migrate deploy && node dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # set to your Neon connection string in the dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false # first-run admin (seed); safe to remove after first deploy
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Aneel

@@ -1,0 +1,532 @@
+// Website Tracker & Client Management — data model
+// Design rule: derived values (balances, statuses, days-remaining, collection
+// rate, paid-through) are NEVER stored. They are computed in src/lib/calc.ts so
+// the numbers can never drift the way the spreadsheet's broken formulas did.
+// Only immutable facts are stored (an invoice snapshots its own amount at
+// creation, so later monthly-fee changes never rewrite billing history).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Users & auth
+// ---------------------------------------------------------------------------
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         String    @default("OWNER") // OWNER | STAFF | DEVELOPER
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  activity     ActivityLog[]
+  salesperson  Salesperson?
+}
+
+// ---------------------------------------------------------------------------
+// Configurable dropdown option lists (Settings page manages these)
+// ---------------------------------------------------------------------------
+model OptionList {
+  id       String  @id @default(cuid())
+  listKey  String // e.g. "clientStatus", "servicePlan", "expenseCategory"
+  value    String
+  order    Int     @default(0)
+  active   Boolean @default(true)
+
+  @@unique([listKey, value])
+  @@index([listKey])
+}
+
+// Scalar / structured settings: currency, reminder windows, company info, billing rules
+model Config {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String // JSON-encoded when structured
+}
+
+// ---------------------------------------------------------------------------
+// Clients
+// ---------------------------------------------------------------------------
+model Client {
+  id                    String    @id @default(cuid())
+  code                  String    @unique // C001
+  businessName          String
+  contactName           String?
+  phone                 String?
+  website               String?
+  city                  String?
+  subscriptionStartDate DateTime?
+  billingDay            Int? // day-of-month the subscription is due (1-31)
+  monthlyFee            Decimal   @default(0) @db.Decimal(12, 2)
+  servicePlan           String? // Basic | Standard | Premium | Custom
+  status                String    @default("Active") // Active | Trial | Paused | Cancelled
+  pauseDate             DateTime?
+  cancellationDate      DateTime?
+  paymentMethod         String?
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime? // soft delete / archive
+
+  websites Website[]
+  invoices Invoice[]
+  payments Payment[]
+  expenses Expense[]
+  tickets  SupportTicket[]
+  assignments      ClientAssignment[]
+  convertedFromLead Lead?
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Websites
+// ---------------------------------------------------------------------------
+model Website {
+  id               String    @id @default(cuid())
+  code             String    @unique // WEB-C001-01
+  clientId         String
+  projectName      String?
+  primaryUrl       String?
+  status           String    @default("Planning") // Planning | In Development | Live | Paused | Cancelled
+  projectStartDate DateTime?
+  launchDate       DateTime?
+  notes            String?
+
+  // Domain
+  domainName        String?
+  domainProvider    String?
+  domainOwner       String? // Me | Client | Shared
+  domainCost        Decimal?  @db.Decimal(12, 2)
+  domainPurchaseDate DateTime?
+  domainRenewalDate DateTime?
+  domainAutoRenew   Boolean   @default(false)
+
+  // Hosting
+  hostingProvider    String?
+  hostingOwner       String?
+  hostingPlan        String?
+  hostingCost        Decimal?  @db.Decimal(12, 2)
+  hostingRenewalDate DateTime?
+  hostingAutoRenew   Boolean   @default(false)
+
+  // SSL
+  sslExpiryDate DateTime?
+
+  // Technical
+  repositoryUrl          String?
+  deploymentPlatform     String?
+  adminUrl               String?
+  analyticsInstalled     Boolean @default(false)
+  searchConsoleInstalled Boolean @default(false)
+  lastBackupDate         DateTime?
+  lastWebsiteUpdate      DateTime?
+  credentialLocation     String? // password-manager reference only — never a raw password
+  techNotes              String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  client   Client          @relation(fields: [clientId], references: [id])
+  expenses Expense[]
+  tickets  SupportTicket[]
+  assignments ClientAssignment[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Invoices  (an invoice snapshots its own amount — history never rewrites)
+// ---------------------------------------------------------------------------
+model Invoice {
+  id             String    @id @default(cuid())
+  code           String    @unique // INV-202607-C001-01
+  clientId       String
+  invoiceDate    DateTime
+  billingMonth   DateTime // first day of the billing month
+  chargeType     String    @default("Monthly Subscription")
+  description    String?
+  dueDate        DateTime // resolved at creation (manual, or from client.billingDay)
+  amount         Decimal   @default(0) @db.Decimal(12, 2) // charge before discount (subscription = monthlyFee snapshot)
+  discount       Decimal   @default(0) @db.Decimal(12, 2)
+  reminderStatus String    @default("Not Sent")
+  lastReminderDate DateTime?
+  notes          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  client   Client    @relation(fields: [clientId], references: [id])
+  payments Payment[]
+  tickets  SupportTicket[]
+
+  @@index([clientId])
+  @@index([billingMonth])
+  @@index([chargeType])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+model Payment {
+  id            String    @id @default(cuid())
+  code          String    @unique // PAY-20260720-001
+  paymentDate   DateTime
+  invoiceId     String?
+  clientId      String
+  amount        Decimal   @db.Decimal(12, 2)
+  method        String    @default("Cash") // Cash | Whish | Bank Transfer | Card | Other
+  reference     String?
+  receivedBy    String?
+  depositStatus String    @default("Not Deposited") // Not Deposited | Deposited | Not Applicable
+  depositDate   DateTime?
+  notes         String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  client  Client   @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([invoiceId])
+  @@index([paymentDate])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+model Expense {
+  id                  String    @id @default(cuid())
+  code                String    @unique // EXP-202607-001
+  expenseDate         DateTime
+  expenseMonth        DateTime // first day of month
+  vendor              String?
+  category            String    @default("Other")
+  clientId            String?
+  websiteId           String?
+  description         String?
+  amount              Decimal   @db.Decimal(12, 2)
+  method              String?
+  recurring           Boolean   @default(false)
+  renewalFrequency    String? // Monthly | Quarterly | Every 6 Months | Yearly | One Time
+  nextRenewalDate     DateTime?
+  reimbursable        Boolean   @default(false)
+  reimbursementStatus String    @default("Not Applicable")
+  receiptUrl          String?
+  notes               String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  client  Client?  @relation(fields: [clientId], references: [id])
+  website Website? @relation(fields: [websiteId], references: [id])
+
+  @@index([clientId])
+  @@index([websiteId])
+  @@index([expenseMonth])
+  @@index([category])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Support / work tickets
+// ---------------------------------------------------------------------------
+model SupportTicket {
+  id                    String    @id @default(cuid())
+  code                  String    @unique // TKT-202607-001 (internal) or SUP-202607-001 (from website)
+  requestedDate         DateTime
+  requestSource         String?
+  clientId              String? // nullable: a website request may not match a client yet
+  websiteId             String?
+  category              String    @default("Other")
+  summary               String
+  priority              String    @default("Medium") // Low | Medium | High | Urgent
+  status                String    @default("Not Started")
+  assignedTo            String?
+  dueDate               DateTime?
+  completedDate         DateTime?
+  hoursSpent            Decimal   @default(0) @db.Decimal(8, 2)
+  includedInSubscription Boolean  @default(true)
+  extraCharge           Decimal   @default(0) @db.Decimal(12, 2)
+  clientApproved        Boolean   @default(false)
+  invoiceId             String?
+  requestLink           String?
+  notes                 String?
+
+  // public "Client Support" intake (from the website)
+  requestType       String? // detailed customer-facing type (Website Not Opening, Update Price, ...)
+  requesterName     String?
+  requesterEmail    String?
+  requesterPhone    String?
+  requesterBusiness String?
+  requesterWebsite  String?
+  pageUrl           String?
+  deviceInfo        String?
+  browserInfo       String?
+  problemStarted    String?
+  frequency         String?
+  stepsToReproduce  String?
+  businessImpact    String?
+  files             Json?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  client  Client?  @relation(fields: [clientId], references: [id])
+  website Website? @relation(fields: [websiteId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([clientId])
+  @@index([websiteId])
+  @@index([status])
+  @@index([priority])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Activity log & notifications
+// ---------------------------------------------------------------------------
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  entityType String // "Client" | "Invoice" | ...
+  entityId   String?
+  action     String // "create" | "update" | "delete" | "payment" | ...
+  summary    String
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  type       String // invoiceOverdue | domainRenewal | sslExpiry | ...
+  severity   String    @default("info") // info | warn | attention | critical
+  entityType String?
+  entityId   String?
+  userId     String? // target a specific user (e.g. a salesperson)
+  message    String
+  dueDate    DateTime?
+  read       Boolean   @default(false)
+  dismissedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([read])
+  @@index([type])
+  @@index([userId])
+}
+
+// ===========================================================================
+// SALES MODULE — commission-only sales team
+// ===========================================================================
+
+model Salesperson {
+  id                       String    @id @default(cuid())
+  code                     String    @unique // SP001
+  userId                   String?   @unique // linked login account (role SALESPERSON)
+  fullName                 String
+  photoUrl                 String?
+  phone                    String?
+  email                    String?
+  city                     String? // city or territory
+  startDate                DateTime?
+  endDate                  DateTime? // final working date
+  status                   String    @default("Applicant") // Applicant|Active|Paused|Inactive|Left Company|Terminated
+  commissionMethod         String    @default("Fixed") // Fixed | Percentage (default plan)
+  commissionAmount         Decimal   @default(5) @db.Decimal(12, 2) // fixed $ per paid website / month
+  commissionPercent        Decimal   @default(25) @db.Decimal(5, 2) // % of collected subscription
+  paymentMethod            String? // Whish | Bank Transfer | Cash | ...
+  whishNumber              String?
+  bankInfo                 String?
+  agreementUrl             String? // reference/link only (file storage later)
+  agreementSignedDate      DateTime?
+  finalEligibleCommissionMonth DateTime?
+  departureReason          String?
+  notes                    String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user                 User?              @relation(fields: [userId], references: [id])
+  leads                Lead[]
+  assignmentsOriginal  ClientAssignment[] @relation("OriginalSalesperson")
+  assignmentsCurrent   ClientAssignment[] @relation("CurrentSalesperson")
+  applications         Application[]
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Lead {
+  id                String    @id @default(cuid())
+  code              String    @unique // LEAD-202607-001
+  salespersonId     String
+  businessName      String
+  contactPerson     String?
+  phone             String?
+  whatsapp          String?
+  email             String?
+  instagram         String?
+  category          String?
+  city              String?
+  existingWebsite   String?
+  source            String? // Door-to-door | Instagram | WhatsApp | ...
+  dateAdded         DateTime  @default(now())
+  lastContactDate   DateTime?
+  nextFollowUpDate  DateTime?
+  interestedService String?
+  proposedMonthly   Decimal?  @db.Decimal(12, 2)
+  proposedSetup     Decimal?  @db.Decimal(12, 2)
+  status            String    @default("New") // New|Contacted|Interested|...|Won|Lost|...
+  closeChance       Int? // estimated % chance of closing
+  lostReason        String?
+  notes             String?
+  convertedClientId String?   @unique // set when converted to a client
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  salesperson     Salesperson    @relation(fields: [salespersonId], references: [id])
+  convertedClient Client?        @relation(fields: [convertedClientId], references: [id])
+  activities      LeadActivity[]
+  application     Application?
+
+  @@index([salespersonId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model LeadActivity {
+  id        String   @id @default(cuid())
+  leadId    String
+  type      String // note | call | status_change | followup | convert | transfer
+  summary   String
+  meta      Json?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+}
+
+model ClientAssignment {
+  id                    String    @id @default(cuid())
+  code                  String    @unique // ASG-...
+  clientId              String
+  websiteId             String?
+  originalSalespersonId String
+  currentSalespersonId  String
+  startDate             DateTime  @default(now())
+  endDate               DateTime?
+  effectiveBillingMonth DateTime // first day of the month commission starts
+  status                String    @default("Active") // Active | Pending | Transferred | Ended
+  transferReason        String?
+  assignedBy            String?
+  notes                 String?
+
+  // commission agreed for this client (overrides the salesperson's default plan)
+  commissionMethod  String? // Fixed | Percentage
+  commissionAmount  Decimal? @db.Decimal(12, 2)
+  commissionPercent Decimal? @db.Decimal(5, 2)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  client             Client      @relation(fields: [clientId], references: [id])
+  website            Website?    @relation(fields: [websiteId], references: [id])
+  originalSalesperson Salesperson @relation("OriginalSalesperson", fields: [originalSalespersonId], references: [id])
+  currentSalesperson  Salesperson @relation("CurrentSalesperson", fields: [currentSalespersonId], references: [id])
+
+  @@index([clientId])
+  @@index([currentSalespersonId])
+  @@index([status])
+}
+
+// Public "Start Your Website" application. Creates a CRM lead on submit; the
+// richer intake (needs, content, files, consent) lives here linked to that lead.
+model Application {
+  id            String   @id @default(cuid())
+  code          String   @unique // APP-202607-001
+  status        String   @default("Application Received") // customer-friendly statuses (§20)
+
+  // Step 1 — about the business
+  businessName  String
+  category      String?
+  contactPerson String?
+  phone         String?
+  whatsapp      String?
+  email         String?
+  city          String?
+  country       String?
+  instagram     String?
+  existingWebsite String?
+  isOperating   Boolean  @default(true)
+  description   String?
+
+  // Step 2 — what they need
+  needType      String? // new | redesign
+  plan          String? // basic | standard | premium
+  needs         Json? // { bookings, ordering, store, customerAccounts, ... }
+  otherFeatures String?
+
+  // Step 3 — content they have + uploaded files
+  hasContent    Json? // { logo, description, serviceList, prices, photos, ... }
+  files         Json? // [{ name, url, size, type }]
+
+  // Step 4 — timeline & contact
+  launchTimeline String?
+  contactMethod String?
+  bestTime      String?
+  meetingType   String?
+  additionalInfo String?
+  hearAbout     String?
+  referralCode  String?
+
+  // consent (§7 step 5)
+  consentContact  Boolean @default(false)
+  priceMayChange  Boolean @default(false)
+  privacyAgreed   Boolean @default(false)
+
+  // sales / marketing connection (§17)
+  salespersonId String?
+  leadId        String?  @unique
+  marketingSource String?
+  campaign      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  archived  Boolean   @default(false)
+
+  salesperson Salesperson? @relation(fields: [salespersonId], references: [id])
+  lead        Lead?        @relation(fields: [leadId], references: [id])
+
+  @@index([status])
+  @@index([salespersonId])
+}

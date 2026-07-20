@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   Website Tracker — internal admin design system
+   Dense, fast, legible. Neutral slate base + one restrained indigo accent.
+   Status palette follows the spec: green/yellow/orange/red/grey.
+   Theme-aware: light by default, dark via prefers-color-scheme + [data-theme].
+   ========================================================================= */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+  --accent: #4f46e5;
+  --accent-2: #4338ca;
+  --accent-soft: #eef2ff;
+  --accent-ink: #ffffff;
+
+  --page: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --sidebar: #0f172a;
+  --sidebar-ink: #cbd5e1;
+  --sidebar-ink-dim: #64748b;
+  --sidebar-active: #1e293b;
+
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --line-2: #eef2f6;
+
+  /* status: text / background / border */
+  --good: #15803d;      --good-bg: #dcfce7;   --good-line: #bbf7d0;
+  --warn: #a16207;      --warn-bg: #fef9c3;   --warn-line: #fde68a;
+  --attn: #c2410c;      --attn-bg: #ffedd5;   --attn-line: #fed7aa;
+  --crit: #b91c1c;      --crit-bg: #fee2e2;   --crit-line: #fecaca;
+  --neut: #475569;      --neut-bg: #f1f5f9;   --neut-line: #e2e8f0;
+  --info: #1d4ed8;      --info-bg: #dbeafe;   --info-line: #bfdbfe;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -12px rgba(15, 23, 42, 0.18);
+  --r-lg: 16px; --r-md: 11px; --r-sm: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --accent: #818cf8;
+    --accent-2: #a5b4fc;
+    --accent-soft: #1e2140;
+    --accent-ink: #0b0f1a;
+
+    --page: #0b0f17;
+    --surface: #131926;
+    --surface-2: #0f1420;
+    --sidebar: #080b12;
+    --sidebar-ink: #94a3b8;
+    --sidebar-ink-dim: #475569;
+    --sidebar-active: #1a2233;
+
+    --ink: #e6edf6;
+    --ink-2: #b6c2d4;
+    --muted: #7c8aa0;
+    --line: #232c3d;
+    --line-2: #1a2230;
+
+    --good: #4ade80; --good-bg: #0f2a1c; --good-line: #1c4532;
+    --warn: #fbbf24; --warn-bg: #2a2410; --warn-line: #4a3f14;
+    --attn: #fb923c; --attn-bg: #2c1a0f; --attn-line: #4a2c16;
+    --crit: #f87171; --crit-bg: #2c1416; --crit-line: #4c2226;
+    --neut: #94a3b8; --neut-bg: #1a2230; --neut-line: #2a3446;
+    --info: #60a5fa; --info-bg: #10203a; --info-line: #1c3a5e;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -14px rgba(0, 0, 0, 0.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --accent: #818cf8; --accent-2: #a5b4fc; --accent-soft: #1e2140; --accent-ink: #0b0f1a;
+  --page: #0b0f17; --surface: #131926; --surface-2: #0f1420;
+  --sidebar: #080b12; --sidebar-ink: #94a3b8; --sidebar-ink-dim: #475569; --sidebar-active: #1a2233;
+  --ink: #e6edf6; --ink-2: #b6c2d4; --muted: #7c8aa0; --line: #232c3d; --line-2: #1a2230;
+  --good: #4ade80; --good-bg: #0f2a1c; --good-line: #1c4532;
+  --warn: #fbbf24; --warn-bg: #2a2410; --warn-line: #4a3f14;
+  --attn: #fb923c; --attn-bg: #2c1a0f; --attn-line: #4a2c16;
+  --crit: #f87171; --crit-bg: #2c1416; --crit-line: #4c2226;
+  --neut: #94a3b8; --neut-bg: #1a2230; --neut-line: #2a3446;
+  --info: #60a5fa; --info-bg: #10203a; --info-line: #1c3a5e;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -14px rgba(0, 0, 0, 0.7);
+}
+
+* { border-color: var(--line); }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04";
+}
+
+/* Tabular numbers everywhere financial figures appear. */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ---- Reusable component classes ---- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-weight: 600; font-size: 0.875rem; line-height: 1;
+  padding: 0.5rem 0.85rem; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  cursor: pointer; transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+.btn-sm { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+
+.input {
+  width: 100%; font-size: 0.9rem; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 0.5rem 0.7rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); }
+
+/* Status pill */
+.pill {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.72rem; font-weight: 600; line-height: 1;
+  padding: 0.28rem 0.55rem; border-radius: 999px; border: 1px solid transparent;
+  white-space: nowrap;
+}
+.pill-good { color: var(--good); background: var(--good-bg); border-color: var(--good-line); }
+.pill-warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+.pill-attn { color: var(--attn); background: var(--attn-bg); border-color: var(--attn-line); }
+.pill-crit { color: var(--crit); background: var(--crit-bg); border-color: var(--crit-line); }
+.pill-neut { color: var(--neut); background: var(--neut-bg); border-color: var(--neut-line); }
+.pill-info { color: var(--info); background: var(--info-bg); border-color: var(--info-line); }
+
+.pill-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+
+/* scrollbars */
+::-webkit-scrollbar { height: 10px; width: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; border: 2px solid var(--page); }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

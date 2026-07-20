@@ -27,6 +27,24 @@ export interface Lead {
 
 export interface LeadActivity { id: string; type: string; summary: string; user: string | null; createdAt: string }
 
+export interface Commission {
+  id: string; code: string;
+  websiteId: string; websiteCode: string | null; websiteName: string | null;
+  clientId: string; clientName: string | null; clientCode: string | null;
+  salespersonId: string; salespersonName: string | null; salespersonCode: string | null;
+  billingMonth: string; month: string;
+  basis: string; method: string;
+  subscriptionAmount: number; amount: number; adjustment: number;
+  status: string; statusReason: string | null;
+  approvedAt: string | null; approvedBy: string | null; heldReason: string | null;
+  payoutId: string | null; createdAt: string;
+}
+
+export interface CommissionSummary {
+  count: number; expected: number; eligible: number; approved: number;
+  paid: number; underReview: number; held: number; waiting: number;
+}
+
 export interface Assignment {
   id: string; code: string; clientId: string; clientName: string | null; clientCode: string | null;
   websiteId: string | null; websiteCode: string | null;

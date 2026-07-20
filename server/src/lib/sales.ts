@@ -87,6 +87,15 @@ export async function nextSupportCode(tx: Tx, date: Date): Promise<string> {
   return `${prefix}${pad(max + 1, 3)}`;
 }
 
+/** CMM-202607-001 for monthly commission rows. */
+export async function nextCommissionCode(tx: Tx, date: Date): Promise<string> {
+  const prefix = `CMM-${ym(date)}-`;
+  const rows = await tx.commission.findMany({ where: { code: { startsWith: prefix } }, select: { code: true } });
+  let max = 0;
+  for (const r of rows) { const n = parseInt(r.code.replace(prefix, ""), 10); if (n > max) max = n; }
+  return `${prefix}${pad(max + 1, 3)}`;
+}
+
 // Internal ticket status -> customer-friendly label (§10).
 export function friendlyStatus(status: string): string {
   const map: Record<string, string> = {

@@ -48,6 +48,10 @@ router.get("/", async (req, res) => {
       return { assignmentId: a.id, clientId: a.clientId, businessName: a.client.businessName, monthlyFee: toNum(a.client.monthlyFee), paidThisMonth: isPaid };
     });
 
+    // Real commission rows for the current month (this salesperson only).
+    const comms = await prisma.commission.findMany({ where: { salespersonId: spId, billingMonth: firstOfMonth(now) } });
+    const csum = (pred: (s: string) => boolean) => money(comms.filter((c) => pred(c.status)).reduce((a, c) => a + toNum(c.amount), 0));
+
     return res.json({
       mode: "salesperson",
       cards: {
@@ -57,12 +61,16 @@ router.get("/", async (req, res) => {
         paidClients: paying,
         unpaidClients: assignments.length - paying,
         expectedCommission: money(paying * commAmount),
-        eligibleCommission: 0, approvedCommission: 0, heldCommission: 0, paidCommission: 0, // Phase 2
+        eligibleCommission: csum((s) => s === "Eligible"),
+        approvedCommission: csum((s) => s === "Approved" || s === "Included in Payout"),
+        heldCommission: csum((s) => s === "Held"),
+        paidCommission: csum((s) => s === "Paid"),
       },
       leadsToFollowUp,
       assignedClients,
-      // why commissions are pending (Phase 2 will make this dynamic)
-      commissionNote: "Commission is generated from collected payments once you complete the monthly follow-up (coming in the next phase).",
+      commissionNote: comms.length === 0
+        ? "No commissions generated for this month yet."
+        : "A commission becomes Eligible once the website subscription is paid and you have logged the monthly follow-up.",
     });
   }
 
@@ -99,6 +107,12 @@ router.get("/", async (req, res) => {
   for (let i = 5; i >= 0; i--) months.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   const newClientsByMonth = months.map((k) => ({ month: k, count: assignments.filter((a) => monthKey(a.startDate) === k).length }));
 
+  // Real commission totals across the team for the current month.
+  const allComms = await prisma.commission.findMany({ where: { billingMonth: firstOfMonth(now) } });
+  const acsum = (pred: (s: string) => boolean) => money(allComms.filter((c) => pred(c.status)).reduce((a, c) => a + toNum(c.amount), 0));
+  const approvedCommission = acsum((s) => s === "Approved" || s === "Included in Payout");
+  const paidCommission = acsum((s) => s === "Paid");
+
   res.json({
     mode: "admin",
     cards: {
@@ -110,7 +124,9 @@ router.get("/", async (req, res) => {
       activePayingWebsites: payingWebsites,
       monthlySubscriptionRevenue: money(subRevenue),
       expectedCommissionThisMonth: money(expectedCommission),
-      approvedCommission: 0, paidCommission: 0, // Phase 2
+      approvedCommission,
+      paidCommission,
+      owedToTeam: money(approvedCommission - paidCommission),
       companyRevenueAfterCommission: money(subRevenue - expectedCommission),
       unpaidClients,
     },

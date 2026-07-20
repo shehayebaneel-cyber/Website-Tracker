@@ -78,6 +78,12 @@ const STATUS_TONE: Record<string, Tone> = {
   Low: "neut", Medium: "info", High: "attn", Urgent: "crit",
   // deposit
   "Not Deposited": "warn", Deposited: "good", "Not Applicable": "neut",
+  // commissions
+  Expected: "neut", "Waiting for Client Payment": "warn", "Waiting for Follow-Up": "warn",
+  "Under Review": "attn", Eligible: "info", Approved: "good", "Included in Payout": "good",
+  Paid: "good", Held: "attn", Reversed: "crit",
+  // payouts
+  Draft: "neut",
 };
 
 export function statusTone(status: string | null | undefined): Tone {

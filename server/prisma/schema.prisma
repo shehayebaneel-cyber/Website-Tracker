@@ -88,6 +88,8 @@ model Client {
   expenses Expense[]
   tickets  SupportTicket[]
   assignments      ClientAssignment[]
+  commissions      Commission[]
+  followUps        MonthlyFollowUp[]
   convertedFromLead Lead?
 
   @@index([status])
@@ -156,6 +158,7 @@ model Website {
   tickets  SupportTicket[]
   assignments ClientAssignment[]
   invoices Invoice[]
+  commissions Commission[]
 
   @@index([clientId])
   @@index([status])
@@ -394,6 +397,8 @@ model Salesperson {
   assignmentsOriginal  ClientAssignment[] @relation("OriginalSalesperson")
   assignmentsCurrent   ClientAssignment[] @relation("CurrentSalesperson")
   applications         Application[]
+  commissions          Commission[]
+  followUps            MonthlyFollowUp[]
 
   @@index([status])
   @@index([deletedAt])
@@ -480,10 +485,83 @@ model ClientAssignment {
   website            Website?    @relation(fields: [websiteId], references: [id])
   originalSalesperson Salesperson @relation("OriginalSalesperson", fields: [originalSalespersonId], references: [id])
   currentSalesperson  Salesperson @relation("CurrentSalesperson", fields: [currentSalespersonId], references: [id])
+  commissions        Commission[]
 
   @@index([clientId])
   @@index([currentSalespersonId])
   @@index([status])
+}
+
+// A monthly commission the salesperson earns for ONE website when its
+// subscription is paid. One row per (website, billingMonth). Derived amounts
+// are recomputed by the monthly "Generate & review" run until an owner
+// approves/pays them; Approved/Included in Payout/Paid rows are never downgraded.
+model Commission {
+  id                    String    @id @default(cuid())
+  code                  String    @unique // CMM-202607-001
+  websiteId             String
+  clientId              String
+  salespersonId         String // credited salesperson (current manager at generation)
+  assignmentId          String?
+  billingMonth          DateTime // first day of the month
+  subscriptionInvoiceId String? // the website's subscription invoice for that month
+  basis                 String    @default("Collected") // Collected | Billed
+  method                String    @default("Fixed") // Fixed | Percentage
+  subscriptionAmount    Decimal   @default(0) @db.Decimal(12, 2) // the $20 billed/collected
+  amount                Decimal   @default(0) @db.Decimal(12, 2) // the $5 commission
+  status                String    @default("Expected") // commissionStatus option list
+  statusReason          String?
+  followUpId            String? // the MonthlyFollowUp that satisfied eligibility (S2)
+  approvedAt            DateTime?
+  approvedBy            String?
+  heldReason            String?
+  payoutId              String? // set when included in a payout (S3)
+  adjustment            Decimal   @default(0) @db.Decimal(12, 2)
+  adjustmentNote        String?
+  reversedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  website      Website          @relation(fields: [websiteId], references: [id])
+  client       Client           @relation(fields: [clientId], references: [id])
+  salesperson  Salesperson      @relation(fields: [salespersonId], references: [id])
+  assignment   ClientAssignment? @relation(fields: [assignmentId], references: [id])
+
+  @@unique([websiteId, billingMonth])
+  @@index([salespersonId, billingMonth])
+  @@index([status])
+  @@index([clientId])
+  @@index([payoutId])
+}
+
+// A salesperson's monthly check-in with an assigned client. Its existence for a
+// (client, month) is what moves that month's commissions from Under Review to
+// Eligible. Captures satisfaction, needs, risks and upsell opportunities.
+model MonthlyFollowUp {
+  id                String    @id @default(cuid())
+  clientId          String
+  salespersonId     String
+  month             DateTime // first day of the month
+  contactedDate     DateTime?
+  method            String? // WhatsApp | Phone | Email | In Person | Video Call | Other
+  satisfaction      String? // Very Satisfied | Satisfied | Neutral | Unsatisfied | At Risk | No Response
+  needsUpdate       Boolean   @default(false)
+  hasTechnicalIssue Boolean   @default(false)
+  mayCancel         Boolean   @default(false)
+  upsellOpportunity Boolean   @default(false)
+  upsellNote        String?
+  notes             String?
+  status            String    @default("Completed") // followUpStatus option list
+  createdBy         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  client      Client      @relation(fields: [clientId], references: [id])
+  salesperson Salesperson @relation(fields: [salespersonId], references: [id])
+
+  @@unique([clientId, month])
+  @@index([salespersonId, month])
+  @@index([clientId])
 }
 
 // Public "Start Your Website" application. Creates a CRM lead on submit; the

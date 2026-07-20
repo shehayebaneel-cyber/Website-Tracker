@@ -63,12 +63,14 @@ export default function TicketForm({
         <button className="btn btn-primary" onClick={save} disabled={busy || !d.clientId || !d.summary}>{busy ? "Saving…" : existing ? "Save" : "Create ticket"}</button>
       </>}>
       {error && <div className="pill pill-crit mb-3 w-full justify-center py-2">{error}</div>}
+      {existing?.fromWebsite && <IntakePanel t={existing} />}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
         <Field label="Client *">
           <select className="input" value={d.clientId ?? ""} onChange={(e) => { set("clientId", e.target.value); set("websiteId", null); }} disabled={!!clientId}>
             <option value="">Select client…</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.businessName}</option>)}
           </select>
+          {existing?.unlinked && <p className="mt-1 text-xs" style={{ color: "var(--attn, #c26a1b)" }}>From the website — pick the matching client to link this request.</p>}
         </Field>
         <Field label="Website (optional)">
           <select className="input" value={d.websiteId ?? ""} onChange={(e) => set("websiteId", e.target.value || null)}>
@@ -113,8 +115,75 @@ export default function TicketForm({
             <span className="text-sm">Client approved the extra charge</span>
           </label>
         </>}
+        <div className="sm:col-span-2">
+          <Field label={existing?.fromWebsite ? "Description & internal notes" : "Notes"}>
+            <textarea className="input" rows={3} value={d.notes ?? ""} onChange={(e) => set("notes", e.target.value)}
+              placeholder={existing?.fromWebsite ? "What the client wrote, plus any internal notes…" : "Internal notes…"} />
+          </Field>
+        </div>
       </div>
       {!d.includedInSubscription && <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Approved extra work that isn't invoiced yet will show up as an alert until you create/link an invoice for it.</p>}
     </Modal>
+  );
+}
+
+const isImage = (type?: string) => !!type && type.startsWith("image/");
+
+function IntakePanel({ t }: { t: Ticket }) {
+  const rows: [string, string | null | undefined][] = [
+    ["Request type", t.requestType],
+    ["Business", t.requesterBusiness],
+    ["Contact name", t.requesterName],
+    ["Phone", t.requesterPhone],
+    ["Email", t.requesterEmail],
+    ["Website", t.requesterWebsite],
+    ["Page / section", t.pageUrl],
+    ["Device", t.deviceInfo],
+    ["When it started", t.problemStarted],
+    ["How often", t.frequency],
+    ["Steps / what to change", t.stepsToReproduce],
+  ];
+  const shown = rows.filter(([, v]) => v && String(v).trim());
+  const files = t.files ?? [];
+
+  return (
+    <div className="mb-4 rounded-lg p-4" style={{ border: "1px solid var(--line)", background: "var(--surface-2, rgba(0,0,0,0.02))" }}>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="pill">Website</span>
+        <span className="text-sm font-semibold">Submitted from the website</span>
+      </div>
+
+      {t.businessImpact && (
+        <div className="mb-3 rounded-md px-3 py-2 text-sm" style={{ background: "rgba(194,106,27,0.10)", color: "var(--attn, #c26a1b)" }}>
+          <span className="font-semibold">Business impact:</span> {t.businessImpact}
+        </div>
+      )}
+
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+        {shown.map(([label, value]) => (
+          <div key={label} className="flex flex-col">
+            <dt className="text-xs" style={{ color: "var(--muted)" }}>{label}</dt>
+            <dd className="break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {files.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1.5 text-xs" style={{ color: "var(--muted)" }}>Attachments</div>
+          <div className="flex flex-wrap gap-2">
+            {files.map((f, i) => (
+              <a key={i} href={f.url} target="_blank" rel="noreferrer" title={f.name}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs" style={{ border: "1px solid var(--line)" }}>
+                {isImage(f.type)
+                  ? <img src={f.url} alt={f.name} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4 }} />
+                  : <span style={{ fontSize: 18 }}>📎</span>}
+                <span className="max-w-[140px] truncate">{f.name}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

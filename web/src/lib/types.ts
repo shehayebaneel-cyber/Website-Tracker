@@ -173,6 +173,7 @@ export interface Ticket {
   clientCode?: string | null;
   // public "Client Support" intake (from the website)
   fromWebsite?: boolean;
+  unlinked?: boolean;
   requestType?: string | null;
   requesterName?: string | null;
   requesterEmail?: string | null;

@@ -69,7 +69,17 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   (`web` section `applications`, OWNER/MANAGER) with status management (customer-friendly §20 statuses)
   + link to the created lead. `APP-YYYYMM-NNN` codes.
   Static files served at `/uploads` (unguessable names; gate/cloud-store later).
-- **Public Phase 3**: support form → ticket. **Phase 4**: client login/portal (auth CLIENT role).
+- **Public Phase 3 — DONE**: client **Support form** (`public/src/pages/Support.tsx`) — per-type conditional
+  fields (bug/update/design), file uploads, urgency with required business-impact, confirmation with ticket
+  number; **Track page** (`Track.tsx`) — reference + contact-verified status timeline (privacy-gated, 403 on
+  mismatch). Server `/api/public/support` (rate-limited + honeypot) creates a **SupportTicket** (`requestSource`
+  "Website Form"), auto-matches an existing client by code/phone/business name, maps friendly priority, notifies
+  the client's salesperson; `/api/public/track` returns `friendlyStatus`. Admin **Support** screen shows a
+  **Website** badge (matched) / **Unlinked** badge (no client yet), and the ticket detail shows a read-only
+  "Submitted from the website" intake panel (requester contact, page, device, steps, business impact,
+  attachment thumbnails) + link-to-client for unlinked requests. `SUP-YYYYMM-NNN` codes. Web dev proxies
+  `/uploads` so attachments render. Verified end-to-end desktop + mobile.
+- **Public Phase 4 (next)**: client login/portal (auth CLIENT role).
 
 ## Sales module (commission-only sales team)
 - **Roles**: added `SALESPERSON` + `MANAGER` to `lib/perms.ts` with new sales sections.

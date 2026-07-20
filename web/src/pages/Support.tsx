@@ -30,7 +30,14 @@ export default function Support() {
 
   const columns: Column<Ticket>[] = [
     { id: "code", header: "Ticket", primary: true, cell: (t) => <span className="tnum font-semibold">{t.code}</span> },
-    { id: "client", header: "Client", cell: (t) => t.clientName },
+    { id: "client", header: "Client", cell: (t) => (
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span>{t.clientName}</span>
+        {t.unlinked
+          ? <span className="pill pill-attn" title="Submitted from the website — not yet linked to a client">Unlinked</span>
+          : t.fromWebsite && <span className="pill" title="Submitted from the website">Website</span>}
+      </span>
+    ) },
     { id: "summary", header: "Summary", cell: (t) => <span>{t.summary}{t.unbilledExtraWork && <span className="pill pill-attn ml-2">Unbilled</span>}</span> },
     { id: "priority", header: "Priority", cell: (t) => <StatusPill status={t.priority} /> },
     { id: "status", header: "Status", cell: (t) => <StatusPill status={t.status} /> },

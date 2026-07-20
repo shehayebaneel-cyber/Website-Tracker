@@ -15,7 +15,14 @@ const tInclude = {
 } satisfies Prisma.SupportTicketInclude;
 
 function withClient(t: any) {
-  return { ...serializeTicket(t), clientName: t.client?.businessName ?? t.requesterBusiness ?? "—", clientCode: t.client?.code ?? null, fromWebsite: !t.clientId && !!t.requesterBusiness };
+  const fromWebsite = t.requestSource === "Website Form";
+  return {
+    ...serializeTicket(t),
+    clientName: t.client?.businessName ?? t.requesterBusiness ?? "—",
+    clientCode: t.client?.code ?? null,
+    fromWebsite,
+    unlinked: fromWebsite && !t.clientId,
+  };
 }
 
 // ---- List -----------------------------------------------------------------
@@ -31,6 +38,7 @@ router.get("/", async (req, res) => {
     { code: { contains: q, mode: "insensitive" } },
     { summary: { contains: q, mode: "insensitive" } },
     { client: { businessName: { contains: q, mode: "insensitive" } } },
+    { requesterBusiness: { contains: q, mode: "insensitive" } },
   ];
 
   const [total, rows] = await Promise.all([

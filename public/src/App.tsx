@@ -14,6 +14,8 @@ import FAQ from "./pages/FAQ";
 import Start from "./pages/Start";
 import Support from "./pages/Support";
 import Track from "./pages/Track";
+import Login from "./pages/Login";
+import Portal from "./pages/Portal";
 import Stub from "./pages/Stub";
 
 function ScrollToTop() {
@@ -43,7 +45,8 @@ export default function App() {
           <Route path="/start" element={<Start />} />
           <Route path="/support" element={<Support />} />
           <Route path="/track" element={<Track />} />
-          <Route path="/login" element={<Stub title="Client Login" phase="Phase 4 — the client portal" />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/portal" element={<Portal />} />
           <Route path="/terms" element={<Stub title="Terms & Conditions" phase="a later phase" />} />
           <Route path="/privacy" element={<Stub title="Privacy Policy" phase="a later phase" />} />
           <Route path="*" element={<Home />} />

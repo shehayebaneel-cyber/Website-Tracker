@@ -4,7 +4,8 @@ import { api } from "../lib/api";
 import type { Client, Website, Invoice, Payment, Expense, Ticket } from "../lib/types";
 import { money, fmtDate, fmtMonth, daysLabel } from "../lib/format";
 import { Page, PageHeader } from "../components/Page";
-import { Card, Spinner, ErrorState, EmptyState, StatusPill, Detail } from "../components/ui";
+import { Card, Spinner, ErrorState, EmptyState, StatusPill, Detail, Field } from "../components/ui";
+import { Modal } from "../components/Modal";
 import ClientForm from "./ClientForm";
 import WebsiteForm from "./WebsiteForm";
 import InvoiceForm from "./InvoiceForm";
@@ -20,6 +21,7 @@ interface Profile {
   payments: Payment[];
   tickets: Ticket[];
   expenses: Expense[];
+  portalLogin?: { email: string; active: boolean } | null;
 }
 
 const TABS = ["Overview", "Websites", "Invoices", "Payments", "Expenses", "Support", "Notes"] as const;
@@ -37,6 +39,7 @@ export default function ClientProfile() {
   const [actionBusy, setActionBusy] = useState(false);
   const [modal, setModal] = useState<null | "invoice" | "payment" | "expense" | "ticket">(null);
   const [remind, setRemind] = useState<ReminderTarget | null>(null);
+  const [portalModal, setPortalModal] = useState(false);
 
   function load() {
     setLoading(true);
@@ -82,6 +85,7 @@ export default function ClientProfile() {
             <button className="btn" onClick={() => setModal("payment")}>+ Payment</button>
             <button className="btn" onClick={() => setModal("expense")}>+ Expense</button>
             <button className="btn" onClick={() => setModal("ticket")}>+ Ticket</button>
+            <button className="btn" onClick={() => setPortalModal(true)}>{data.portalLogin ? "Portal ✓" : "Portal login"}</button>
             {c.status !== "Cancelled" && c.status !== "Paused" && (
               <button className="btn" disabled={actionBusy} onClick={() => action("pause")}>Pause</button>
             )}
@@ -256,7 +260,44 @@ export default function ClientProfile() {
       {modal === "expense" && <ExpenseForm open clientId={c.id} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal === "ticket" && <TicketForm open clientId={c.id} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {remind && <ReminderModal open target={remind} onClose={() => setRemind(null)} onStatusChanged={load} />}
+      {portalModal && <PortalLoginModal clientId={c.id} existing={data.portalLogin ?? null} defaultEmail="" onClose={() => setPortalModal(false)} onSaved={() => { setPortalModal(false); load(); }} />}
     </Page>
+  );
+}
+
+function PortalLoginModal({ clientId, existing, defaultEmail, onClose, onSaved }: { clientId: string; existing: { email: string; active: boolean } | null; defaultEmail: string; onClose: () => void; onSaved: () => void }) {
+  const [email, setEmail] = useState(existing?.email ?? defaultEmail);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function save() {
+    setBusy(true); setError(null);
+    try { await api.post(`/clients/${clientId}/portal-login`, { email, password }); setDone(true); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={existing ? "Client portal login" : "Create portal login"}
+      footer={done
+        ? <button className="btn btn-primary" onClick={onSaved}>Done</button>
+        : <>
+            <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="btn btn-primary" onClick={save} disabled={busy || !email || password.length < 6}>{busy ? "Saving…" : existing ? "Update login" : "Create login"}</button>
+          </>}>
+      {error && <div className="pill pill-crit mb-3 w-full justify-center py-2">{error}</div>}
+      {done ? (
+        <p className="text-sm">Login is ready. Share these with the client to sign in at the IGNIS site → <b>Client Login</b>:</p>
+      ) : (
+        <p className="mb-3 text-sm" style={{ color: "var(--muted)" }}>
+          {existing ? `Current login: ${existing.email}. Set a new email and/or password below.` : "Give this client access to their portal (websites, payments, support requests)."}
+        </p>
+      )}
+      <Field label="Email"><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={done} /></Field>
+      <div className="mt-3"><Field label={existing ? "New password" : "Password (min 6 chars)"}><input className="input" type="text" value={password} onChange={(e) => setPassword(e.target.value)} disabled={done} placeholder="give the client this password" /></Field></div>
+      {done && <div className="mt-3 rounded-lg p-3 text-sm tnum" style={{ background: "var(--surface-2)" }}>{email}{password ? ` · ${password}` : ""}</div>}
+    </Modal>
   );
 }
 

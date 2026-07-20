@@ -27,7 +27,7 @@ model User {
   email        String    @unique
   passwordHash String
   name         String
-  role         String    @default("OWNER") // OWNER | STAFF | DEVELOPER
+  role         String    @default("OWNER") // OWNER | STAFF | DEVELOPER | MANAGER | SALESPERSON | CLIENT
   active       Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
@@ -35,6 +35,7 @@ model User {
 
   activity     ActivityLog[]
   salesperson  Salesperson?
+  client       Client?
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +65,7 @@ model Config {
 model Client {
   id                    String    @id @default(cuid())
   code                  String    @unique // C001
+  userId                String?   @unique // linked portal login (role CLIENT)
   businessName          String
   contactName           String?
   phone                 String?
@@ -82,6 +84,7 @@ model Client {
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime? // soft delete / archive
 
+  portalUser User?          @relation(fields: [userId], references: [id])
   websites Website[]
   invoices Invoice[]
   payments Payment[]
@@ -117,6 +120,7 @@ model Website {
   billingDay            Int       @default(1) // day-of-month the subscription is due (1-31)
   subscriptionStartDate DateTime?
   subscriptionActive    Boolean   @default(true)
+  includedUpdatesPerMonth Int     @default(3) // small updates included in the subscription each month
 
   // Domain
   domainName        String?

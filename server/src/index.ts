@@ -32,6 +32,7 @@ import salesDashboardRouter from "./routes/salesDashboard.js";
 import commissionsRouter from "./routes/commissions.js";
 import followupsRouter from "./routes/followups.js";
 import payoutsRouter from "./routes/payouts.js";
+import portalRouter from "./routes/portal.js";
 import publicRouter from "./routes/public.js";
 import applicationsRouter from "./routes/applications.js";
 import { requireSection } from "./lib/perms.js";
@@ -59,6 +60,9 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
 // Everything below requires a valid session.
 app.use("/api", requireAuth);
+
+// Client portal (role CLIENT only; scoped to their own client record).
+app.use("/api/portal", portalRouter);
 
 // App bootstrap for the current user: role + currency + company name.
 // Accessible to every authenticated role (used for nav, currency, reminder templates).

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/db.js";
 import { nextClientCode } from "../lib/ids.js";
+import { hashPassword } from "../lib/auth.js";
 import {
   serializeClient,
   serializeWebsite,
@@ -105,6 +106,7 @@ router.get("/:id", async (req, res) => {
       websites: { where: { deletedAt: null }, orderBy: { code: "asc" } },
       tickets: { where: { deletedAt: null }, include: { invoice: true }, orderBy: { requestedDate: "desc" } },
       expenses: { where: { deletedAt: null }, orderBy: { expenseDate: "desc" } },
+      portalUser: { select: { email: true, active: true } },
     },
   });
   if (!c) return res.status(404).json({ error: "Client not found" });
@@ -116,7 +118,35 @@ router.get("/:id", async (req, res) => {
     payments: c.payments.map((p) => serializePayment(p)),
     tickets: c.tickets.map((t) => serializeTicket(t)),
     expenses: (c as any).expenses.map((e: any) => serializeExpense(e)),
+    portalLogin: (c as any).portalUser ? { email: (c as any).portalUser.email, active: (c as any).portalUser.active } : null,
   });
+});
+
+// ---- Create / reset a client's portal login (admin) -----------------------
+router.post("/:id/portal-login", async (req, res) => {
+  const schema = z.object({ email: z.string().email(), password: z.string().min(6) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "A valid email and a password of at least 6 characters are required." });
+  const email = parsed.data.email.toLowerCase();
+
+  const client = await prisma.client.findFirst({ where: { id: req.params.id, deletedAt: null } });
+  if (!client) return res.status(404).json({ error: "Client not found" });
+
+  const passwordHash = await hashPassword(parsed.data.password);
+
+  if (client.userId) {
+    // reset the existing login (email + password)
+    const clash = await prisma.user.findFirst({ where: { email, id: { not: client.userId } } });
+    if (clash) return res.status(409).json({ error: "Another account already uses that email." });
+    await prisma.user.update({ where: { id: client.userId }, data: { email, passwordHash, active: true, role: "CLIENT" } });
+  } else {
+    const clash = await prisma.user.findUnique({ where: { email } });
+    if (clash) return res.status(409).json({ error: "Another account already uses that email." });
+    const user = await prisma.user.create({ data: { email, passwordHash, name: client.businessName, role: "CLIENT" } });
+    await prisma.client.update({ where: { id: client.id }, data: { userId: user.id } });
+  }
+  await logActivity(req, "Client", client.id, "portal-login", `Set portal login for ${client.businessName} (${email})`);
+  res.json({ portalLogin: { email, active: true } });
 });
 
 // ---- Create ---------------------------------------------------------------

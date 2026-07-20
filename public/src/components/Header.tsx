@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Logo } from "./Logo";
+import { useAuth } from "../lib/auth";
 
 const NAV = [
   { to: "/", label: "Home", end: true },
@@ -15,6 +16,8 @@ export default function Header() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const loc = useLocation();
+  const { user } = useAuth();
+  const loggedIn = !!user;
 
   useEffect(() => setOpen(false), [loc.pathname]);
   useEffect(() => {
@@ -44,7 +47,7 @@ export default function Header() {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <Link to="/login" className="text-sm font-medium" style={{ color: "var(--ink-2)" }}>Client Login</Link>
+          <Link to={loggedIn ? "/portal" : "/login"} className="text-sm font-medium" style={{ color: "var(--ink-2)" }}>{loggedIn ? "My Account" : "Client Login"}</Link>
           <Link to="/start" className="btn btn-primary" style={{ padding: "0.7rem 1.15rem" }}>Start Your Website</Link>
         </div>
 
@@ -72,7 +75,7 @@ export default function Header() {
             <div className="mt-4 flex flex-col gap-3">
               <Link to="/start" className="btn btn-primary btn-block" style={{ padding: "1.05rem" }}>Start Your Website</Link>
               <Link to="/support" className="btn btn-outline btn-block" style={{ padding: "1.05rem" }}>Existing Client Support</Link>
-              <Link to="/login" className="btn btn-ghost btn-block" style={{ padding: "1.05rem" }}>Client Login</Link>
+              <Link to={loggedIn ? "/portal" : "/login"} className="btn btn-ghost btn-block" style={{ padding: "1.05rem" }}>{loggedIn ? "My Account" : "Client Login"}</Link>
             </div>
           </div>
         </div>

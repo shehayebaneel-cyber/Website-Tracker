@@ -13,10 +13,18 @@ const router = Router();
 const invInclude = {
   payments: { where: { deletedAt: null } },
   client: { select: { businessName: true, code: true } },
+  website: { select: { code: true, projectName: true } },
 } satisfies Prisma.InvoiceInclude;
 
 function withClient(i: any) {
-  return { ...serializeInvoice(i), clientName: i.client.businessName, clientCode: i.client.code };
+  return {
+    ...serializeInvoice(i),
+    clientName: i.client.businessName,
+    clientCode: i.client.code,
+    websiteId: i.websiteId ?? null,
+    websiteCode: i.website?.code ?? null,
+    websiteName: i.website?.projectName ?? null,
+  };
 }
 
 // ---- List -----------------------------------------------------------------
@@ -53,6 +61,7 @@ router.get("/:id", async (req, res) => {
 // ---- Create ---------------------------------------------------------------
 const createSchema = z.object({
   clientId: z.string().min(1),
+  websiteId: z.string().optional().nullable(),
   chargeType: z.string().default("Monthly Subscription"),
   billingMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   invoiceDate: z.coerce.date().optional(),
@@ -75,16 +84,25 @@ router.post("/", async (req, res) => {
   const invoiceDate = b.invoiceDate ?? new Date();
   const billingMonth = b.billingMonth ? parseMonthKey(b.billingMonth)! : firstOfMonth(invoiceDate);
 
+  // Subscriptions are per-website: each website carries its own $20/mo and is
+  // billed on its own invoice, so eligibility/commission can be per-website.
+  let website: Prisma.WebsiteGetPayload<{}> | null = null;
   if (isSub) {
+    if (!b.websiteId) return res.status(400).json({ error: "A website is required for a monthly subscription invoice." });
+    website = await prisma.website.findFirst({ where: { id: b.websiteId, clientId: client.id, deletedAt: null } });
+    if (!website) return res.status(400).json({ error: "Website not found for this client" });
     const dup = await prisma.invoice.findFirst({
-      where: { clientId: client.id, chargeType: "Monthly Subscription", billingMonth, deletedAt: null },
+      where: { websiteId: website.id, chargeType: "Monthly Subscription", billingMonth, deletedAt: null },
     });
-    if (dup) return res.status(409).json({ error: `A subscription invoice already exists for ${client.businessName} in ${monthKey(billingMonth)} (${dup.code}).` });
+    if (dup) return res.status(409).json({ error: `A subscription invoice already exists for ${website.projectName ?? website.code} in ${monthKey(billingMonth)} (${dup.code}).` });
+  } else if (b.websiteId) {
+    // optional website link for a one-off charge
+    website = await prisma.website.findFirst({ where: { id: b.websiteId, clientId: client.id, deletedAt: null } });
   }
 
-  const amount = isSub ? toNum(client.monthlyFee) : (b.amount ?? 0);
+  const amount = isSub ? toNum(website!.monthlyFee) : (b.amount ?? 0);
   if (!isSub && amount <= 0) return res.status(400).json({ error: "Amount is required for this charge type" });
-  const dueDate = resolveDueDate(billingMonth, b.manualDueDate ?? null, client.billingDay);
+  const dueDate = resolveDueDate(billingMonth, b.manualDueDate ?? null, isSub ? website!.billingDay : client.billingDay);
 
   const created = await prisma.$transaction(async (tx) => {
     const code = await nextInvoiceCode(tx, client.code, billingMonth);
@@ -92,6 +110,7 @@ router.post("/", async (req, res) => {
       data: {
         code,
         clientId: client.id,
+        websiteId: website?.id ?? null,
         invoiceDate,
         billingMonth,
         chargeType: b.chargeType,
@@ -109,33 +128,43 @@ router.post("/", async (req, res) => {
 });
 
 // ---- Monthly generation: preview -----------------------------------------
+// Subscriptions are per-website: one invoice per active website per month.
+function activeWebsiteWhere(includeTrial: boolean): Prisma.WebsiteWhereInput {
+  return {
+    deletedAt: null,
+    subscriptionActive: true,
+    client: { deletedAt: null, status: includeTrial ? { in: ["Active", "Trial"] } : "Active" },
+  };
+}
+
 router.post("/generate/preview", async (req, res) => {
   const bm = parseMonthKey(req.body?.month);
   if (!bm) return res.status(400).json({ error: "month (YYYY-MM) is required" });
   const includeTrial = !!req.body?.includeTrial;
 
-  const clients = await prisma.client.findMany({
-    where: {
-      deletedAt: null,
-      status: includeTrial ? { in: ["Active", "Trial"] } : "Active",
-    },
+  const websites = await prisma.website.findMany({
+    where: activeWebsiteWhere(includeTrial),
+    include: { client: { select: { code: true, businessName: true, status: true } } },
     orderBy: { code: "asc" },
   });
   const existing = await prisma.invoice.findMany({
-    where: { chargeType: "Monthly Subscription", billingMonth: bm, deletedAt: null },
-    select: { clientId: true, code: true },
+    where: { chargeType: "Monthly Subscription", billingMonth: bm, deletedAt: null, websiteId: { not: null } },
+    select: { websiteId: true, code: true },
   });
-  const existMap = new Map(existing.map((e) => [e.clientId, e.code]));
+  const existMap = new Map(existing.map((e) => [e.websiteId, e.code]));
 
-  const rows = clients.map((c) => ({
-    clientId: c.id,
-    clientCode: c.code,
-    businessName: c.businessName,
-    monthlyFee: toNum(c.monthlyFee),
-    status: c.status,
-    alreadyInvoiced: existMap.has(c.id),
-    existingCode: existMap.get(c.id) ?? null,
-    eligible: !existMap.has(c.id) && toNum(c.monthlyFee) > 0,
+  const rows = websites.map((w) => ({
+    websiteId: w.id,
+    websiteCode: w.code,
+    websiteName: w.projectName,
+    clientId: w.clientId,
+    clientCode: w.client.code,
+    businessName: w.client.businessName,
+    monthlyFee: toNum(w.monthlyFee),
+    status: w.client.status,
+    alreadyInvoiced: existMap.has(w.id),
+    existingCode: existMap.get(w.id) ?? null,
+    eligible: !existMap.has(w.id) && toNum(w.monthlyFee) > 0,
   }));
   res.json({ month: monthKey(bm), rows });
 });
@@ -144,39 +173,40 @@ router.post("/generate/preview", async (req, res) => {
 router.post("/generate", async (req, res) => {
   const bm = parseMonthKey(req.body?.month);
   if (!bm) return res.status(400).json({ error: "month (YYYY-MM) is required" });
-  const clientIds: string[] | undefined = Array.isArray(req.body?.clientIds) ? req.body.clientIds : undefined;
+  const websiteIds: string[] | undefined = Array.isArray(req.body?.websiteIds) ? req.body.websiteIds : undefined;
 
-  const clients = await prisma.client.findMany({
+  const websites = await prisma.website.findMany({
     where: {
-      deletedAt: null,
-      status: { in: ["Active", "Trial"] },
-      ...(clientIds ? { id: { in: clientIds } } : {}),
+      ...activeWebsiteWhere(true),
+      ...(websiteIds ? { id: { in: websiteIds } } : {}),
     },
+    include: { client: { select: { code: true } } },
     orderBy: { code: "asc" },
   });
 
   const created: string[] = [];
   const skipped: { code: string; reason: string }[] = [];
 
-  for (const c of clients) {
-    const fee = toNum(c.monthlyFee);
-    if (fee <= 0) { skipped.push({ code: c.code, reason: "no monthly fee" }); continue; }
+  for (const w of websites) {
+    const fee = toNum(w.monthlyFee);
+    if (fee <= 0) { skipped.push({ code: w.code, reason: "no monthly fee" }); continue; }
     const dup = await prisma.invoice.findFirst({
-      where: { clientId: c.id, chargeType: "Monthly Subscription", billingMonth: bm, deletedAt: null },
+      where: { websiteId: w.id, chargeType: "Monthly Subscription", billingMonth: bm, deletedAt: null },
     });
-    if (dup) { skipped.push({ code: c.code, reason: "already invoiced" }); continue; }
+    if (dup) { skipped.push({ code: w.code, reason: "already invoiced" }); continue; }
 
     await prisma.$transaction(async (tx) => {
-      const code = await nextInvoiceCode(tx, c.code, bm);
+      const code = await nextInvoiceCode(tx, w.client.code, bm);
       await tx.invoice.create({
         data: {
           code,
-          clientId: c.id,
+          clientId: w.clientId,
+          websiteId: w.id,
           invoiceDate: new Date(),
           billingMonth: bm,
           chargeType: "Monthly Subscription",
           description: "Monthly website subscription",
-          dueDate: resolveDueDate(bm, null, c.billingDay),
+          dueDate: resolveDueDate(bm, null, w.billingDay),
           amount: fee,
           discount: 0,
         },

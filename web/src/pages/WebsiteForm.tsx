@@ -76,6 +76,18 @@ export default function WebsiteForm({
         <Field label="Launch date"><input className="input" type="date" value={dateInput(d.launchDate)} onChange={(e) => set("launchDate", e.target.value as any)} /></Field>
       </Section>
 
+      <Section title="Subscription">
+        <Field label="Monthly fee ($)"><input className="input tnum" type="number" min={0} step="0.01" value={d.monthlyFee ?? 0} onChange={(e) => set("monthlyFee", Number(e.target.value || 0))} /></Field>
+        <Field label="Billing day (1–31)"><input className="input tnum" type="number" min={1} max={31} value={d.billingDay ?? 1} onChange={(e) => set("billingDay", Number(e.target.value || 1))} /></Field>
+        <Field label="Subscription start"><input className="input" type="date" value={dateInput(d.subscriptionStartDate)} onChange={(e) => set("subscriptionStartDate", e.target.value as any)} /></Field>
+        <Field label="Billing active">
+          <label className="flex items-center gap-2 pt-2">
+            <input type="checkbox" checked={d.subscriptionActive ?? true} onChange={(e) => set("subscriptionActive", e.target.checked)} />
+            <span className="text-sm">Generate a monthly invoice for this website</span>
+          </label>
+        </Field>
+      </Section>
+
       <Section title="Domain">
         <Field label="Domain name"><input className="input" value={d.domainName ?? ""} onChange={(e) => set("domainName", e.target.value)} /></Field>
         <Field label="Provider"><input className="input" value={d.domainProvider ?? ""} onChange={(e) => set("domainProvider", e.target.value)} /></Field>

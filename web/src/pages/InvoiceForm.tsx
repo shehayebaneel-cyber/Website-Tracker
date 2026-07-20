@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { useOptions } from "../lib/useOptions";
 import { useClientOptions } from "../lib/useClients";
-import type { Invoice } from "../lib/types";
+import type { Invoice, Website, Paged } from "../lib/types";
 import { Modal } from "../components/Modal";
 import { Field } from "../components/ui";
 
@@ -28,18 +28,31 @@ export default function InvoiceForm({
   const [amount, setAmount] = useState<number | "">("");
   const [discount, setDiscount] = useState(0);
   const [description, setDescription] = useState("");
+  const [websites, setWebsites] = useState<Website[]>([]);
+  const [websiteId, setWebsiteId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isSub = chargeType === "Monthly Subscription";
-  const client = useMemo(() => clients.find((c) => c.id === cid), [clients, cid]);
-  const effectiveAmount = isSub ? client?.monthlyFee ?? 0 : Number(amount || 0);
+
+  // Subscriptions are per-website: load the client's websites and bill the chosen one.
+  useEffect(() => {
+    if (!cid) { setWebsites([]); setWebsiteId(""); return; }
+    api.get<Paged<Website>>(`/websites?clientId=${cid}&pageSize=200`).then((r) => {
+      setWebsites(r.items);
+      setWebsiteId((prev) => (r.items.some((w) => w.id === prev) ? prev : (r.items.length === 1 ? r.items[0].id : "")));
+    }).catch(() => setWebsites([]));
+  }, [cid]);
+
+  const website = useMemo(() => websites.find((w) => w.id === websiteId), [websites, websiteId]);
+  const effectiveAmount = isSub ? website?.monthlyFee ?? 0 : Number(amount || 0);
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
       const body: any = { clientId: cid, chargeType, billingMonth: month, discount, description: description || null };
+      if (isSub) body.websiteId = websiteId;
       if (!isSub) body.amount = Number(amount || 0);
       const res = await api.post<{ invoice: Invoice }>("/invoices", body);
       onSaved(res.invoice);
@@ -58,7 +71,7 @@ export default function InvoiceForm({
       footer={
         <>
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={busy || !cid || (!isSub && !amount)}>
+          <button className="btn btn-primary" onClick={save} disabled={busy || !cid || (isSub && !websiteId) || (!isSub && !amount)}>
             {busy ? "Creating…" : "Create invoice"}
           </button>
         </>
@@ -77,10 +90,16 @@ export default function InvoiceForm({
             {(options.chargeType ?? ["Monthly Subscription"]).map((o) => <option key={o}>{o}</option>)}
           </select>
         </Field>
+        <Field label={isSub ? "Website *" : "Website (optional)"}>
+          <select className="input" value={websiteId} onChange={(e) => setWebsiteId(e.target.value)} disabled={!cid}>
+            <option value="">{isSub ? "Select website…" : "—"}</option>
+            {websites.map((w) => <option key={w.id} value={w.id}>{w.code} · {w.projectName || "Website"}{w.monthlyFee ? ` — $${w.monthlyFee}/mo` : ""}</option>)}
+          </select>
+        </Field>
         <Field label="Billing month">
           <input className="input" type="month" value={month} onChange={(e) => setMonth(e.target.value || thisMonthKey())} />
         </Field>
-        <Field label={isSub ? "Amount (from monthly fee)" : "Amount *"}>
+        <Field label={isSub ? "Amount (from website fee)" : "Amount *"}>
           <input className="input tnum" type="number" min={0} step="0.01"
             value={isSub ? effectiveAmount : amount}
             disabled={isSub}
@@ -98,7 +117,7 @@ export default function InvoiceForm({
           </Field>
         </div>
       </div>
-      {isSub && <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Subscription amount is taken from the client's monthly fee. Only one subscription invoice is allowed per client per month.</p>}
+      {isSub && <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Subscription amount is taken from the website's monthly fee. Only one subscription invoice is allowed per website per month.</p>}
     </Modal>
   );
 }

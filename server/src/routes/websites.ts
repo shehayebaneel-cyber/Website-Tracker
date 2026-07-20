@@ -16,6 +16,11 @@ const upsertSchema = z.object({
   projectStartDate: z.coerce.date().optional().nullable(),
   launchDate: z.coerce.date().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // subscription (per-website billing)
+  monthlyFee: z.coerce.number().min(0).optional(),
+  billingDay: z.coerce.number().int().min(1).max(31).optional(),
+  subscriptionStartDate: z.coerce.date().optional().nullable(),
+  subscriptionActive: z.coerce.boolean().optional(),
   // domain
   domainName: z.string().optional().nullable(),
   domainProvider: z.string().optional().nullable(),

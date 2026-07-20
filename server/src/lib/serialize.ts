@@ -83,6 +83,11 @@ export function serializeWebsite(w: Website, now = new Date()) {
     projectStartDate: w.projectStartDate,
     launchDate: w.launchDate,
     notes: w.notes,
+    // subscription (per-website billing)
+    monthlyFee: toNum(w.monthlyFee),
+    billingDay: w.billingDay,
+    subscriptionStartDate: w.subscriptionStartDate,
+    subscriptionActive: w.subscriptionActive,
     // domain
     domainName: w.domainName,
     domainProvider: w.domainProvider,

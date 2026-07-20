@@ -108,6 +108,14 @@ model Website {
   launchDate       DateTime?
   notes            String?
 
+  // Subscription (per-website billing). Each active website carries its own
+  // monthly subscription; one subscription invoice is generated per website per
+  // billing month, and one $5 commission is earned when that invoice is paid.
+  monthlyFee            Decimal   @default(0) @db.Decimal(12, 2)
+  billingDay            Int       @default(1) // day-of-month the subscription is due (1-31)
+  subscriptionStartDate DateTime?
+  subscriptionActive    Boolean   @default(true)
+
   // Domain
   domainName        String?
   domainProvider    String?
@@ -147,6 +155,7 @@ model Website {
   expenses Expense[]
   tickets  SupportTicket[]
   assignments ClientAssignment[]
+  invoices Invoice[]
 
   @@index([clientId])
   @@index([status])
@@ -160,6 +169,7 @@ model Invoice {
   id             String    @id @default(cuid())
   code           String    @unique // INV-202607-C001-01
   clientId       String
+  websiteId      String? // subscription invoices belong to a website; other charges may be client-level
   invoiceDate    DateTime
   billingMonth   DateTime // first day of the billing month
   chargeType     String    @default("Monthly Subscription")
@@ -176,10 +186,12 @@ model Invoice {
   deletedAt DateTime?
 
   client   Client    @relation(fields: [clientId], references: [id])
+  website  Website?  @relation(fields: [websiteId], references: [id])
   payments Payment[]
   tickets  SupportTicket[]
 
   @@index([clientId])
+  @@index([websiteId])
   @@index([billingMonth])
   @@index([chargeType])
   @@index([deletedAt])

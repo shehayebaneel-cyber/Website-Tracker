@@ -50,6 +50,11 @@ export interface Website {
   projectStartDate: string | null;
   launchDate: string | null;
   notes: string | null;
+  // per-website subscription
+  monthlyFee: number;
+  billingDay: number;
+  subscriptionStartDate: string | null;
+  subscriptionActive: boolean;
   domainName: string | null;
   domainProvider: string | null;
   domainOwner: string | null;
@@ -87,6 +92,9 @@ export interface Invoice {
   clientId: string;
   clientName?: string;
   clientCode?: string;
+  websiteId?: string | null;
+  websiteCode?: string | null;
+  websiteName?: string | null;
   invoiceDate: string;
   billingMonth: string;
   chargeType: string;

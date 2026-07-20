@@ -98,7 +98,9 @@ router.get("/", async (req, res) => {
 
   // ---- Selected-month cards --------------------------------------------
   const activeClients = clients.filter((c) => c.status === "Active");
-  const mrr = money(activeClients.reduce((s, c) => s + toNum(c.monthlyFee), 0));
+  const activeClientIds = new Set(activeClients.map((c) => c.id));
+  // MRR = sum of each active website's own subscription (per-website billing)
+  const mrr = money(websites.filter((w) => w.subscriptionActive && activeClientIds.has(w.clientId)).reduce((s, w) => s + toNum(w.monthlyFee), 0));
 
   const selSubs = invCalc.filter(({ inv }) => inv.chargeType === "Monthly Subscription" && monthKey(inv.billingMonth) === selKey);
   const subBilled = money(selSubs.reduce((s, x) => s + x.calc.amountDue, 0));

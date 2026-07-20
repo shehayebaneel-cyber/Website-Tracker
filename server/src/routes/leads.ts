@@ -192,7 +192,12 @@ router.post("/:id/convert", requireSalesAdmin, async (req, res) => {
     });
     const websiteCode = await nextWebsiteCode(tx, client.code);
     const website = await tx.website.create({
-      data: { code: websiteCode, clientId: client.id, projectName: b.projectName ?? lead.businessName, status: "Planning", projectStartDate: startDate, primaryUrl: lead.existingWebsite },
+      data: {
+        code: websiteCode, clientId: client.id, projectName: b.projectName ?? lead.businessName,
+        status: "Planning", projectStartDate: startDate, primaryUrl: lead.existingWebsite,
+        // per-website subscription — this website carries the $20/mo the salesperson earns on
+        monthlyFee: b.monthlyFee, billingDay: b.billingDay ?? 1, subscriptionStartDate: startDate, subscriptionActive: true,
+      },
     });
     const asgCode = await nextAssignmentCode(tx);
     await tx.clientAssignment.create({

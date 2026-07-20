@@ -5,6 +5,9 @@ import { Modal } from "../components/Modal";
 import { Spinner } from "../components/ui";
 
 interface Row {
+  websiteId: string;
+  websiteCode: string;
+  websiteName: string | null;
   clientId: string;
   clientCode: string;
   businessName: string;
@@ -34,7 +37,7 @@ export default function GenerateInvoices({ open, onClose, onDone }: { open: bool
     api.post<{ rows: Row[] }>("/invoices/generate/preview", { month })
       .then((r) => {
         setRows(r.rows);
-        setSelected(new Set(r.rows.filter((x) => x.eligible).map((x) => x.clientId)));
+        setSelected(new Set(r.rows.filter((x) => x.eligible).map((x) => x.websiteId)));
       })
       .finally(() => setLoading(false));
   }
@@ -51,7 +54,7 @@ export default function GenerateInvoices({ open, onClose, onDone }: { open: bool
   async function generate() {
     setBusy(true);
     try {
-      const r = await api.post<{ created: string[]; skipped: any[] }>("/invoices/generate", { month, clientIds: [...selected] });
+      const r = await api.post<{ created: string[]; skipped: any[] }>("/invoices/generate", { month, websiteIds: [...selected] });
       setResult({ created: r.created.length, skipped: r.skipped.length });
       onDone();
     } finally {
@@ -98,18 +101,21 @@ export default function GenerateInvoices({ open, onClose, onDone }: { open: bool
             <thead>
               <tr className="border-b" style={{ background: "var(--surface-2)" }}>
                 <th className="w-10 px-3 py-2"></th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase" style={{ color: "var(--muted)" }}>Client</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase" style={{ color: "var(--muted)" }}>Website</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold uppercase" style={{ color: "var(--muted)" }}>Fee</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase" style={{ color: "var(--muted)" }}>Note</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.clientId} className="border-b" style={{ borderColor: "var(--line-2)", opacity: r.eligible ? 1 : 0.55 }}>
+                <tr key={r.websiteId} className="border-b" style={{ borderColor: "var(--line-2)", opacity: r.eligible ? 1 : 0.55 }}>
                   <td className="px-3 py-2 text-center">
-                    <input type="checkbox" disabled={!r.eligible} checked={selected.has(r.clientId)} onChange={() => toggle(r.clientId)} />
+                    <input type="checkbox" disabled={!r.eligible} checked={selected.has(r.websiteId)} onChange={() => toggle(r.websiteId)} />
                   </td>
-                  <td className="px-3 py-2"><span className="tnum font-medium">{r.clientCode}</span> · {r.businessName}</td>
+                  <td className="px-3 py-2">
+                    <div><span className="tnum font-medium">{r.websiteCode}</span> · {r.websiteName || "Website"}</div>
+                    <div className="text-xs" style={{ color: "var(--muted)" }}>{r.clientCode} · {r.businessName}</div>
+                  </td>
                   <td className="px-3 py-2 text-right tnum">{money(r.monthlyFee)}</td>
                   <td className="px-3 py-2 text-xs" style={{ color: "var(--muted)" }}>
                     {r.alreadyInvoiced ? `already invoiced (${r.existingCode})` : r.monthlyFee <= 0 ? "no monthly fee" : "ready"}

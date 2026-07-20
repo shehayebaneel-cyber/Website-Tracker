@@ -24,8 +24,9 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   (prisma, @prisma/client, @prisma/engines, esbuild) — already recorded in package.json.
 
 ## Design
-- Internal dashboard, not a brand site: neutral slate base + one indigo accent
-  (`--accent`), tabular numbers, dense tables on desktop → cards on mobile.
+- Branded **"IGNIS System"**: warm IGNIS identity — near-black warm ink, cream surfaces,
+  IGNIS orange accent (`--accent` #e8712b) + a flame mark (`.flame-mark`), tabular numbers,
+  dense tables on desktop → cards on mobile. Recharts primary series use the orange (#e8712b).
 - Status colors (spec §17): good=green, due-soon/waiting=yellow, partial/attention=orange,
   overdue/expired/urgent=red, cancelled/paused/future/not-tracked=grey. Mapped in
   `web/src/lib/format.ts` (`statusTone`) + `.pill-*` classes in `index.css`.

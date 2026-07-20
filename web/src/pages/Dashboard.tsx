@@ -11,9 +11,9 @@ import { Page, PageHeader } from "../components/Page";
 import { Card, Spinner, ErrorState, EmptyState, StatusPill } from "../components/ui";
 
 const TONE_COLORS: Record<string, string> = {
-  good: "#22c55e", warn: "#eab308", attn: "#f97316", crit: "#ef4444", neut: "#94a3b8", info: "#6366f1",
+  good: "#22c55e", warn: "#eab308", attn: "#f97316", crit: "#ef4444", neut: "#94a3b8", info: "#e8712b",
 };
-const PIE_PALETTE = ["#6366f1", "#22c55e", "#f97316", "#eab308", "#ef4444", "#14b8a6", "#a855f7", "#94a3b8"];
+const PIE_PALETTE = ["#e8712b", "#22c55e", "#3b82f6", "#eab308", "#ef4444", "#14b8a6", "#a855f7", "#94a3b8"];
 
 function currentMonthKey(): string {
   const d = new Date();
@@ -90,7 +90,7 @@ export default function Dashboard() {
                   <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} />
                   <Tooltip content={<ChartTip />} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="subscriptionBilled" name="Billed" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="subscriptionBilled" name="Billed" fill="#e8712b" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="subscriptionPaid" name="Paid" fill="#22c55e" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -117,7 +117,7 @@ export default function Dashboard() {
                   <XAxis dataKey="month" tickFormatter={monthLabel} tick={axisTick} axisLine={false} tickLine={false} />
                   <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} />
                   <Tooltip content={<ChartTip />} />
-                  <Line type="monotone" dataKey="netCashFlow" name="Net" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 2.5 }} />
+                  <Line type="monotone" dataKey="netCashFlow" name="Net" stroke="#e8712b" strokeWidth={2.5} dot={{ r: 2.5 }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>

@@ -26,13 +26,8 @@ export default function Login() {
     <div className="flex min-h-full items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div
-            className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-lg font-bold text-white"
-            style={{ background: "var(--accent)" }}
-          >
-            ▦
-          </div>
-          <h1 className="text-lg font-bold" style={{ color: "var(--ink)" }}>Website Tracker</h1>
+          <span className="flame-mark mx-auto mb-3 block" aria-hidden="true" style={{ width: 26, height: 32 }} />
+          <h1 className="text-lg font-bold" style={{ color: "var(--ink)" }}>IGNIS <span style={{ fontWeight: 500, color: "var(--muted)" }}>System</span></h1>
           <p className="text-sm" style={{ color: "var(--muted)" }}>Sign in to your management console</p>
         </div>
 

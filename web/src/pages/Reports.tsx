@@ -91,7 +91,7 @@ export default function Reports() {
                 <XAxis dataKey="month" tickFormatter={monthLabel} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} width={30} />
                 <Tooltip labelFormatter={(l) => monthLabel(String(l))} />
-                <Line type="monotone" dataKey="active" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 2.5 }} />
+                <Line type="monotone" dataKey="active" stroke="#e8712b" strokeWidth={2.5} dot={{ r: 2.5 }} />
               </LineChart>
             </ResponsiveContainer>
           </ReportCard>

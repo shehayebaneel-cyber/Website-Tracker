@@ -42,7 +42,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner label="Starting Website Tracker…" />
+        <Spinner label="Starting IGNIS System…" />
       </div>
     );
   }

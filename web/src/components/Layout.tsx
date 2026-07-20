@@ -100,9 +100,12 @@ export default function Layout() {
         style={{ background: "var(--sidebar)", color: "var(--sidebar-ink)" }}
       >
         <div>
-          <div className="px-6 pb-6">
-            <div className="text-[15px] font-bold tracking-tight text-white">Website Tracker</div>
-            <div className="text-[11px]" style={{ color: "var(--sidebar-ink-dim)" }}>Client & business manager</div>
+          <div className="flex items-center gap-2.5 px-6 pb-6">
+            <span className="flame-mark" aria-hidden="true" />
+            <div>
+              <div className="text-[15px] font-bold tracking-tight text-white">IGNIS <span style={{ fontWeight: 500, color: "var(--sidebar-ink)" }}>System</span></div>
+              <div className="text-[11px]" style={{ color: "var(--sidebar-ink-dim)" }}>Business management</div>
+            </div>
           </div>
           {nav}
         </div>
@@ -118,7 +121,10 @@ export default function Layout() {
             style={{ background: "var(--sidebar)", color: "var(--sidebar-ink)" }}
           >
             <div>
-              <div className="px-6 pb-6 text-[15px] font-bold text-white">Website Tracker</div>
+              <div className="flex items-center gap-2.5 px-6 pb-6">
+                <span className="flame-mark" aria-hidden="true" />
+                <span className="text-[15px] font-bold text-white">IGNIS <span style={{ fontWeight: 500, color: "var(--sidebar-ink)" }}>System</span></span>
+              </div>
               {nav}
             </div>
             <UserFooter name={user?.name} email={user?.email} onLogout={logout} theme={theme} setTheme={setTheme} />
@@ -133,7 +139,7 @@ export default function Layout() {
           style={{ background: "var(--surface)" }}
         >
           <button className="btn btn-sm" onClick={() => setMobileOpen(true)} aria-label="Menu">☰</button>
-          <span className="font-bold">Website Tracker</span>
+          <span className="flex items-center gap-2 font-bold"><span className="flame-mark" aria-hidden="true" style={{ width: 15, height: 18 }} /> IGNIS System</span>
         </header>
         <main className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />

@@ -64,7 +64,7 @@ function AdminView({ data, nav }: { data: any; nav: any }) {
               <XAxis dataKey="month" tickFormatter={monthLabel} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
               <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} width={28} />
               <Tooltip labelFormatter={(l) => monthLabel(String(l))} />
-              <Bar dataKey="count" name="New clients" fill="#6366f1" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="count" name="New clients" fill="#e8712b" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>

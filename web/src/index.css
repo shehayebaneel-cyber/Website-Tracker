@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 /* =========================================================================
-   Website Tracker — internal admin design system
-   Dense, fast, legible. Neutral slate base + one restrained indigo accent.
-   Status palette follows the spec: green/yellow/orange/red/grey.
+   IGNIS System — internal admin design system
+   Warm IGNIS identity: near-black warm ink, cream surfaces, IGNIS orange accent
+   and a flame mark. Dense, fast, legible; status palette green/yellow/orange/red.
    Theme-aware: light by default, dark via prefers-color-scheme + [data-theme].
    ========================================================================= */
 
@@ -14,65 +14,70 @@
 
 :root {
   color-scheme: light;
-  --accent: #4f46e5;
-  --accent-2: #4338ca;
-  --accent-soft: #eef2ff;
+  --accent: #e8712b;
+  --accent-2: #cf5f1f;
+  --accent-soft: #fbe8da;
   --accent-ink: #ffffff;
 
-  --page: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --sidebar: #0f172a;
-  --sidebar-ink: #cbd5e1;
-  --sidebar-ink-dim: #64748b;
-  --sidebar-active: #1e293b;
+  /* IGNIS flame */
+  --flame-1: #f7bf3f;
+  --flame-2: #ee7a2b;
+  --flame-3: #e0531c;
 
-  --ink: #0f172a;
-  --ink-2: #334155;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --line-2: #eef2f6;
+  --page: #f7f5f2;
+  --surface: #ffffff;
+  --surface-2: #faf7f3;
+  --sidebar: #17120d;
+  --sidebar-ink: #c8bcae;
+  --sidebar-ink-dim: #857868;
+  --sidebar-active: #2a2018;
+
+  --ink: #1a1511;
+  --ink-2: #4a4239;
+  --muted: #7a7065;
+  --line: #ece7df;
+  --line-2: #f4efe8;
 
   /* status: text / background / border */
   --good: #15803d;      --good-bg: #dcfce7;   --good-line: #bbf7d0;
   --warn: #a16207;      --warn-bg: #fef9c3;   --warn-line: #fde68a;
   --attn: #c2410c;      --attn-bg: #ffedd5;   --attn-line: #fed7aa;
   --crit: #b91c1c;      --crit-bg: #fee2e2;   --crit-line: #fecaca;
-  --neut: #475569;      --neut-bg: #f1f5f9;   --neut-line: #e2e8f0;
+  --neut: #57534e;      --neut-bg: #f5f3f0;   --neut-line: #e7e2db;
   --info: #1d4ed8;      --info-bg: #dbeafe;   --info-line: #bfdbfe;
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -12px rgba(15, 23, 42, 0.18);
+  --shadow-sm: 0 1px 2px rgba(30, 22, 16, 0.06);
+  --shadow: 0 1px 2px rgba(30, 22, 16, 0.05), 0 8px 24px -12px rgba(30, 22, 16, 0.20);
   --r-lg: 16px; --r-md: 11px; --r-sm: 8px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --accent: #818cf8;
-    --accent-2: #a5b4fc;
-    --accent-soft: #1e2140;
-    --accent-ink: #0b0f1a;
+    --accent: #f79b57;
+    --accent-2: #fbb37e;
+    --accent-soft: #2c1c10;
+    --accent-ink: #1c1206;
 
-    --page: #0b0f17;
-    --surface: #131926;
-    --surface-2: #0f1420;
-    --sidebar: #080b12;
-    --sidebar-ink: #94a3b8;
-    --sidebar-ink-dim: #475569;
-    --sidebar-active: #1a2233;
+    --page: #12100c;
+    --surface: #1c1712;
+    --surface-2: #16120d;
+    --sidebar: #0c0a07;
+    --sidebar-ink: #b2a595;
+    --sidebar-ink-dim: #6a5e50;
+    --sidebar-active: #241d15;
 
-    --ink: #e6edf6;
-    --ink-2: #b6c2d4;
-    --muted: #7c8aa0;
-    --line: #232c3d;
-    --line-2: #1a2230;
+    --ink: #f1eae1;
+    --ink-2: #cabfb1;
+    --muted: #948a7d;
+    --line: #2e2820;
+    --line-2: #221d16;
 
-    --good: #4ade80; --good-bg: #0f2a1c; --good-line: #1c4532;
+    --good: #4ade80; --good-bg: #142a1c; --good-line: #1f4532;
     --warn: #fbbf24; --warn-bg: #2a2410; --warn-line: #4a3f14;
     --attn: #fb923c; --attn-bg: #2c1a0f; --attn-line: #4a2c16;
-    --crit: #f87171; --crit-bg: #2c1416; --crit-line: #4c2226;
-    --neut: #94a3b8; --neut-bg: #1a2230; --neut-line: #2a3446;
+    --crit: #f87171; --crit-bg: #2c1614; --crit-line: #4c2622;
+    --neut: #b2a595; --neut-bg: #221d16; --neut-line: #342c22;
     --info: #60a5fa; --info-bg: #10203a; --info-line: #1c3a5e;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -82,15 +87,15 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --accent: #818cf8; --accent-2: #a5b4fc; --accent-soft: #1e2140; --accent-ink: #0b0f1a;
-  --page: #0b0f17; --surface: #131926; --surface-2: #0f1420;
-  --sidebar: #080b12; --sidebar-ink: #94a3b8; --sidebar-ink-dim: #475569; --sidebar-active: #1a2233;
-  --ink: #e6edf6; --ink-2: #b6c2d4; --muted: #7c8aa0; --line: #232c3d; --line-2: #1a2230;
-  --good: #4ade80; --good-bg: #0f2a1c; --good-line: #1c4532;
+  --accent: #f79b57; --accent-2: #fbb37e; --accent-soft: #2c1c10; --accent-ink: #1c1206;
+  --page: #12100c; --surface: #1c1712; --surface-2: #16120d;
+  --sidebar: #0c0a07; --sidebar-ink: #b2a595; --sidebar-ink-dim: #6a5e50; --sidebar-active: #241d15;
+  --ink: #f1eae1; --ink-2: #cabfb1; --muted: #948a7d; --line: #2e2820; --line-2: #221d16;
+  --good: #4ade80; --good-bg: #142a1c; --good-line: #1f4532;
   --warn: #fbbf24; --warn-bg: #2a2410; --warn-line: #4a3f14;
   --attn: #fb923c; --attn-bg: #2c1a0f; --attn-line: #4a2c16;
-  --crit: #f87171; --crit-bg: #2c1416; --crit-line: #4c2226;
-  --neut: #94a3b8; --neut-bg: #1a2230; --neut-line: #2a3446;
+  --crit: #f87171; --crit-bg: #2c1614; --crit-line: #4c2622;
+  --neut: #b2a595; --neut-bg: #221d16; --neut-line: #342c22;
   --info: #60a5fa; --info-bg: #10203a; --info-line: #1c3a5e;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -14px rgba(0, 0, 0, 0.7);
@@ -111,6 +116,20 @@ body {
 
 /* Tabular numbers everywhere financial figures appear. */
 .tnum { font-variant-numeric: tabular-nums; }
+
+/* IGNIS flame mark — small brand glyph for the sidebar / login. */
+.flame-mark {
+  width: 18px; height: 22px; flex-shrink: 0;
+  background: linear-gradient(178deg, var(--flame-1) 0%, var(--flame-2) 48%, var(--flame-3) 100%);
+  border-radius: 50% 50% 50% 50% / 62% 62% 40% 40%;
+  box-shadow: 0 0 12px rgba(232, 113, 43, 0.55);
+  position: relative;
+}
+.flame-mark::after {
+  content: ""; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
+  width: 6px; height: 9px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: linear-gradient(178deg, #fff2cf, var(--flame-1)); opacity: 0.9;
+}
 
 /* ---- Reusable component classes ---- */
 .card {

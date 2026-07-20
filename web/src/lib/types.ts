@@ -170,7 +170,6 @@ export interface Ticket {
   daysOpen: number;
   deadlineStatus: string;
   unbilledExtraWork: boolean;
-  clientName?: string;
   clientCode?: string | null;
   // public "Client Support" intake (from the website)
   fromWebsite?: boolean;

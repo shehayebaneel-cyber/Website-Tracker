@@ -30,6 +30,7 @@ import leadsRouter from "./routes/leads.js";
 import assignmentsRouter from "./routes/assignments.js";
 import salesDashboardRouter from "./routes/salesDashboard.js";
 import commissionsRouter from "./routes/commissions.js";
+import followupsRouter from "./routes/followups.js";
 import publicRouter from "./routes/public.js";
 import applicationsRouter from "./routes/applications.js";
 import { requireSection } from "./lib/perms.js";
@@ -93,6 +94,7 @@ app.use("/api/leads", attachSalesContext, leadsRouter);
 app.use("/api/assignments", attachSalesContext, assignmentsRouter);
 app.use("/api/sales-dashboard", attachSalesContext, salesDashboardRouter);
 app.use("/api/commissions", attachSalesContext, commissionsRouter);
+app.use("/api/followups", attachSalesContext, followupsRouter);
 app.use("/api/applications", requireSection("applications"), applicationsRouter);
 
 // In production, serve the built web app from the same origin as the API.

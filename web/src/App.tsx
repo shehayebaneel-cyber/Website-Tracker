@@ -27,6 +27,7 @@ import Leads from "./pages/sales/Leads";
 import LeadDetail from "./pages/sales/LeadDetail";
 import SalesClients from "./pages/sales/SalesClients";
 import Commissions from "./pages/sales/Commissions";
+import FollowUps from "./pages/sales/FollowUps";
 import Applications from "./pages/sales/Applications";
 import ApplicationDetail from "./pages/sales/ApplicationDetail";
 
@@ -83,6 +84,7 @@ export default function App() {
         <Route path="/sales/applications/:id" element={<ApplicationDetail />} />
         <Route path="/sales/clients" element={<SalesClients />} />
         <Route path="/sales/commissions" element={<Commissions />} />
+        <Route path="/sales/followups" element={<FollowUps />} />
         <Route path="/login" element={<Navigate to={home} replace />} />
         <Route path="*" element={<Navigate to={home} replace />} />
       </Route>

@@ -45,6 +45,21 @@ export interface CommissionSummary {
   paid: number; underReview: number; held: number; waiting: number;
 }
 
+export interface FollowUp {
+  id: string; clientId: string; salespersonId: string; month: string;
+  contactedDate: string | null; method: string | null; satisfaction: string | null;
+  needsUpdate: boolean; hasTechnicalIssue: boolean; mayCancel: boolean; upsellOpportunity: boolean;
+  upsellNote: string | null; notes: string | null; status: string; createdBy: string | null; createdAt: string;
+}
+
+export interface FollowUpRow {
+  clientId: string; clientCode: string; businessName: string; phone: string | null;
+  salespersonId: string; salespersonName: string; month: string;
+  followUp: FollowUp | null; dueStatus: string; atRisk: boolean;
+}
+
+export interface FollowUpSummary { total: number; done: number; due: number; overdue: number; atRisk: number }
+
 export interface Assignment {
   id: string; code: string; clientId: string; clientName: string | null; clientCode: string | null;
   websiteId: string | null; websiteCode: string | null;

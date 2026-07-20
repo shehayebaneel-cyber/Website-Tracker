@@ -84,6 +84,8 @@ const STATUS_TONE: Record<string, Tone> = {
   Paid: "good", Held: "attn", Reversed: "crit",
   // payouts
   Draft: "neut",
+  // follow-ups
+  "Not Due": "neut", "At Risk": "crit", "Client Did Not Respond": "warn",
 };
 
 export function statusTone(status: string | null | undefined): Tone {

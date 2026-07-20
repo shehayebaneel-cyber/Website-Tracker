@@ -10,8 +10,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection (PgBouncer) for the app at runtime.
+  url       = env("DATABASE_URL")
+  // Direct (non-pooled) connection for migrations. Falls back to DATABASE_URL
+  // locally where there is no separate pooler. On Neon, set this to the
+  // endpoint WITHOUT "-pooler".
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------

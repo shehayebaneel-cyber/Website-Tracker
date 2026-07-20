@@ -64,6 +64,7 @@ export default function TicketForm({
       </>}>
       {error && <div className="pill pill-crit mb-3 w-full justify-center py-2">{error}</div>}
       {existing?.fromWebsite && <IntakePanel t={existing} />}
+      {existing && <ThreadPanel ticketId={existing.id} />}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
         <Field label="Client *">
           <select className="input" value={d.clientId ?? ""} onChange={(e) => { set("clientId", e.target.value); set("websiteId", null); }} disabled={!!clientId}>
@@ -124,6 +125,44 @@ export default function TicketForm({
       </div>
       {!d.includedInSubscription && <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>Approved extra work that isn't invoiced yet will show up as an alert until you create/link an invoice for it.</p>}
     </Modal>
+  );
+}
+
+function ThreadPanel({ ticketId }: { ticketId: string }) {
+  const [data, setData] = useState<{ messages: any[]; clientConfirmed: boolean } | null>(null);
+  const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get<{ messages: any[]; clientConfirmed: boolean }>(`/support/${ticketId}/thread`).then(setData).catch(() => {}); }, [ticketId]);
+  async function send() {
+    if (!reply.trim()) return;
+    setBusy(true);
+    try { const r = await api.post<{ messages: any[] }>(`/support/${ticketId}/reply`, { body: reply }); setData((d) => ({ clientConfirmed: d?.clientConfirmed ?? false, messages: r.messages })); setReply(""); }
+    finally { setBusy(false); }
+  }
+  if (!data) return null;
+  return (
+    <div className="mb-4 rounded-lg p-4" style={{ border: "1px solid var(--line)", background: "var(--surface-2, rgba(0,0,0,0.02))" }}>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-semibold">Conversation with the client</span>
+        {data.clientConfirmed && <span className="pill pill-good">Client confirmed fixed ✓</span>}
+      </div>
+      {data.messages.length === 0 ? <p className="text-xs" style={{ color: "var(--muted)" }}>No messages yet.</p> : (
+        <div className="flex flex-col gap-2">
+          {data.messages.map((m) => (
+            <div key={m.id} className={`flex ${m.sender === "team" ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid var(--line)", background: m.sender === "team" ? "var(--surface-2)" : "transparent" }}>
+                <div className="text-[11px]" style={{ color: "var(--muted)" }}>{m.sender === "team" ? "You" : "Client"} · {new Date(m.createdAt).toLocaleString()}</div>
+                <div className="mt-0.5 whitespace-pre-wrap">{m.body}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex gap-2">
+        <input className="input" placeholder="Reply to the client…" value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(); }} />
+        <button className="btn btn-primary" style={{ padding: "0.4rem 0.9rem", whiteSpace: "nowrap" }} disabled={busy || !reply.trim()} onClick={send}>Send</button>
+      </div>
+    </div>
   );
 }
 

@@ -102,20 +102,20 @@ export default function Portal() {
         {/* Requests */}
         <div className="mt-8 flex items-center justify-between">
           <H inline>Support requests</H>
-          <Link to="/support" className="btn btn-primary" style={{ padding: "0.6rem 1rem" }}>New request</Link>
+          <Link to="/portal/new" className="btn btn-primary" style={{ padding: "0.6rem 1rem" }}>New request</Link>
         </div>
         {me.openRequests.length === 0 && me.closedRequests.length === 0 ? (
-          <div className="card p-5 text-sm" style={{ color: "var(--muted)" }}>No requests yet. Need a change or spotted a problem? Start a new request.</div>
+          <div className="card p-5 text-sm" style={{ color: "var(--muted)" }}>No requests yet. Need a change or spotted a problem? <Link to="/portal/new" style={{ color: "var(--orange)", fontWeight: 600 }}>Start a new request.</Link></div>
         ) : (
           <div className="grid grid-cols-1 gap-2">
             {[...me.openRequests, ...me.closedRequests].map((r) => (
-              <div key={r.id} className="card flex items-center justify-between gap-3 p-4">
+              <Link key={r.id} to={`/portal/request/${r.id}`} className="card flex items-center justify-between gap-3 p-4" style={{ transition: "border-color .15s" }}>
                 <div>
                   <div className="text-sm font-semibold">{r.summary}</div>
                   <div className="text-xs" style={{ color: "var(--muted)" }}>{r.code} · {r.requestType || r.category} · {fmtDate(r.requestedDate)}</div>
                 </div>
                 <span className="pill-tag" style={{ background: ["Completed", "Closed"].includes(r.status) ? "#1a8f5c" : "var(--orange)" }}>{r.status}</span>
-              </div>
+              </Link>
             ))}
           </div>
         )}

@@ -143,6 +143,30 @@ router.patch("/:id", async (req, res) => {
   res.json({ ticket: withClient(updated) });
 });
 
+// ---- Conversation thread (team <-> client) --------------------------------
+function msgDto(m: any) {
+  return { id: m.id, sender: m.sender, authorName: m.authorName, body: m.body, attachments: m.attachments ?? [], createdAt: m.createdAt };
+}
+
+router.get("/:id/thread", async (req, res) => {
+  const t = await prisma.supportTicket.findFirst({ where: { id: req.params.id, deletedAt: null }, include: { messages: { orderBy: { createdAt: "asc" } } } });
+  if (!t) return res.status(404).json({ error: "Ticket not found" });
+  res.json({ clientConfirmed: t.clientConfirmed, clientConfirmedAt: t.clientConfirmedAt, messages: t.messages.map(msgDto) });
+});
+
+router.post("/:id/reply", async (req, res) => {
+  const body = String(req.body?.body ?? "").trim();
+  if (!body) return res.status(400).json({ error: "Write a reply first." });
+  const t = await prisma.supportTicket.findFirst({ where: { id: req.params.id, deletedAt: null } });
+  if (!t) return res.status(404).json({ error: "Ticket not found" });
+  await prisma.ticketMessage.create({ data: { ticketId: t.id, sender: "team", authorName: req.user?.email ?? "IGNIS", body } });
+  // Replying to the client puts the ball in their court.
+  if (["Not Started", "In Progress"].includes(t.status)) await prisma.supportTicket.update({ where: { id: t.id }, data: { status: "Waiting for Client" } });
+  await logActivity(req, "SupportTicket", t.id, "reply", `Replied to ${t.code}`);
+  const fresh = await prisma.supportTicket.findFirst({ where: { id: t.id }, include: { messages: { orderBy: { createdAt: "asc" } } } });
+  res.status(201).json({ messages: fresh!.messages.map(msgDto) });
+});
+
 router.delete("/:id", async (req, res) => {
   const existing = await prisma.supportTicket.findFirst({ where: { id: req.params.id, deletedAt: null } });
   if (!existing) return res.status(404).json({ error: "Ticket not found" });

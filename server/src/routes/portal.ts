@@ -1,9 +1,10 @@
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
+import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { toNum, money, firstOfMonth, monthKey, startOfDay } from "../lib/calc.js";
 import { serializeInvoice, serializePayment } from "../lib/serialize.js";
-import { friendlyStatus } from "../lib/sales.js";
+import { friendlyStatus, nextSupportCode } from "../lib/sales.js";
 
 const router = Router();
 
@@ -81,6 +82,114 @@ router.get("/me", async (_req, res) => {
     openRequests: open.map(ticketDto),
     closedRequests: closed.map(ticketDto),
   });
+});
+
+// ---- Support: submit / view / reply / confirm -----------------------------
+const PRIORITY_MAP: Record<string, string> = { Normal: "Low", Important: "High", Urgent: "Urgent" };
+function internalCategory(requestType: string): string {
+  const t = requestType.toLowerCase();
+  if (t.includes("design")) return "Design Change";
+  if (t.includes("bug") || t.includes("not opening") || t.includes("problem") || t.includes("error")) return "Bug Fix";
+  if (t.includes("feature") || t.includes("new page")) return "New Feature";
+  if (t.includes("update") || t.includes("price") || t.includes("text") || t.includes("photo") || t.includes("content")) return "Content Change";
+  return "Other";
+}
+const fileSchema = z.array(z.object({ name: z.string(), url: z.string(), size: z.number(), type: z.string() })).optional().nullable();
+
+function fullTicketDto(t: any) {
+  return {
+    ...ticketDto(t),
+    websiteId: t.websiteId,
+    businessImpact: t.businessImpact,
+    pageUrl: t.pageUrl,
+    notes: t.notes,
+    files: t.files ?? [],
+    clientConfirmed: t.clientConfirmed,
+    messages: (t.messages ?? []).map((m: any) => ({ id: m.id, sender: m.sender, authorName: m.authorName, body: m.body, attachments: m.attachments ?? [], createdAt: m.createdAt })),
+  };
+}
+
+const supportSchema = z.object({
+  requestType: z.string().min(1),
+  summary: z.string().min(1).max(200),
+  description: z.string().max(4000).optional().nullable(),
+  websiteId: z.string().optional().nullable(),
+  priority: z.enum(["Normal", "Important", "Urgent"]).default("Normal"),
+  businessImpact: z.string().optional().nullable(),
+  pageUrl: z.string().optional().nullable(),
+  files: fileSchema,
+});
+
+router.post("/support", async (req, res) => {
+  const parsed = supportSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Please check the form." });
+  const b = parsed.data;
+  const client = res.locals.client;
+  const now = new Date();
+
+  // Resolve a website of this client (the chosen one, or their only one).
+  let websiteId: string | null = null;
+  const websites = await prisma.website.findMany({ where: { clientId: client.id, deletedAt: null }, select: { id: true } });
+  if (b.websiteId && websites.some((w) => w.id === b.websiteId)) websiteId = b.websiteId;
+  else if (websites.length === 1) websiteId = websites[0].id;
+
+  const created = await prisma.$transaction(async (tx) => {
+    const code = await nextSupportCode(tx, now);
+    const ticket = await tx.supportTicket.create({
+      data: {
+        code, requestedDate: now, requestSource: "Client Portal",
+        clientId: client.id, websiteId,
+        category: internalCategory(b.requestType), summary: b.summary, priority: PRIORITY_MAP[b.priority] ?? "Low",
+        status: "Not Started", requestType: b.requestType,
+        requesterName: client.contactName, requesterBusiness: client.businessName,
+        pageUrl: b.pageUrl ?? null, businessImpact: b.businessImpact ?? null, files: (b.files ?? undefined) as any,
+        notes: b.description ?? null,
+      },
+    });
+    if (b.description) {
+      await tx.ticketMessage.create({ data: { ticketId: ticket.id, sender: "client", authorName: client.contactName ?? client.businessName, body: b.description, attachments: (b.files ?? undefined) as any } });
+    }
+    return ticket;
+  });
+  res.status(201).json({ reference: created.code, id: created.id });
+});
+
+async function loadOwnedTicket(req: Request, res: Response) {
+  const client = res.locals.client;
+  const t = await prisma.supportTicket.findFirst({
+    where: { id: req.params.id, clientId: client.id, deletedAt: null },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+  return t;
+}
+
+router.get("/support/:id", async (req, res) => {
+  const t = await loadOwnedTicket(req, res);
+  if (!t) return res.status(404).json({ error: "Request not found" });
+  res.json({ ticket: fullTicketDto(t) });
+});
+
+router.post("/support/:id/reply", async (req, res) => {
+  const schema = z.object({ body: z.string().min(1).max(4000), files: fileSchema });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Write a message first." });
+  const t = await loadOwnedTicket(req, res);
+  if (!t) return res.status(404).json({ error: "Request not found" });
+  const client = res.locals.client;
+  await prisma.ticketMessage.create({ data: { ticketId: t.id, sender: "client", authorName: client.contactName ?? client.businessName, body: parsed.data.body, attachments: (parsed.data.files ?? undefined) as any } });
+  // A client reply re-opens a waiting ticket.
+  if (t.status === "Waiting for Client") await prisma.supportTicket.update({ where: { id: t.id }, data: { status: "In Progress" } });
+  const fresh = await loadOwnedTicket(req, res);
+  res.status(201).json({ ticket: fullTicketDto(fresh) });
+});
+
+router.post("/support/:id/confirm", async (req, res) => {
+  const t = await loadOwnedTicket(req, res);
+  if (!t) return res.status(404).json({ error: "Request not found" });
+  if (t.status !== "Completed") return res.status(400).json({ error: "This request isn't marked completed yet." });
+  await prisma.supportTicket.update({ where: { id: t.id }, data: { clientConfirmed: true, clientConfirmedAt: new Date() } });
+  const fresh = await loadOwnedTicket(req, res);
+  res.json({ ticket: fullTicketDto(fresh) });
 });
 
 export default router;

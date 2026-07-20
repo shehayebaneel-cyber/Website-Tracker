@@ -312,19 +312,39 @@ model SupportTicket {
   businessImpact    String?
   files             Json?
 
+  // client confirmation that a completed request is actually resolved
+  clientConfirmed   Boolean   @default(false)
+  clientConfirmedAt DateTime?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  client  Client?  @relation(fields: [clientId], references: [id])
-  website Website? @relation(fields: [websiteId], references: [id])
-  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  client   Client?         @relation(fields: [clientId], references: [id])
+  website  Website?        @relation(fields: [websiteId], references: [id])
+  invoice  Invoice?        @relation(fields: [invoiceId], references: [id])
+  messages TicketMessage[]
 
   @@index([clientId])
   @@index([websiteId])
   @@index([status])
   @@index([priority])
   @@index([deletedAt])
+}
+
+// A message in a support-ticket conversation (client <-> IGNIS team).
+model TicketMessage {
+  id          String   @id @default(cuid())
+  ticketId    String
+  sender      String // "client" | "team"
+  authorName  String?
+  body        String
+  attachments Json?
+  createdAt   DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId])
 }
 
 // ---------------------------------------------------------------------------

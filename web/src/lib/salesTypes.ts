@@ -60,6 +60,21 @@ export interface FollowUpRow {
 
 export interface FollowUpSummary { total: number; done: number; due: number; overdue: number; atRisk: number }
 
+export interface PayoutLine {
+  id: string; code: string; month: string; clientName: string | null; clientCode: string | null;
+  websiteCode: string | null; websiteName: string | null; subscriptionAmount: number; amount: number; status: string;
+}
+
+export interface Payout {
+  id: string; code: string; salespersonId: string; salespersonName: string | null; salespersonCode: string | null;
+  periodMonth: string; month: string; status: string;
+  totalEarned: number; totalHeld: number; totalAdjustments: number; netAmount: number;
+  paidDate: string | null; method: string | null; reference: string | null; proofUrl: string | null; notes: string | null;
+  lineCount?: number; createdAt: string;
+  salespersonPaymentMethod?: string | null; salespersonWhish?: string | null;
+  lines?: PayoutLine[];
+}
+
 export interface Assignment {
   id: string; code: string; clientId: string; clientName: string | null; clientCode: string | null;
   websiteId: string | null; websiteCode: string | null;

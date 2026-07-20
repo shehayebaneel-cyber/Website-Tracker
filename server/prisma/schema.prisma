@@ -399,6 +399,7 @@ model Salesperson {
   applications         Application[]
   commissions          Commission[]
   followUps            MonthlyFollowUp[]
+  payouts              Payout[]
 
   @@index([status])
   @@index([deletedAt])
@@ -526,6 +527,7 @@ model Commission {
   client       Client           @relation(fields: [clientId], references: [id])
   salesperson  Salesperson      @relation(fields: [salespersonId], references: [id])
   assignment   ClientAssignment? @relation(fields: [assignmentId], references: [id])
+  payout       Payout?          @relation(fields: [payoutId], references: [id])
 
   @@unique([websiteId, billingMonth])
   @@index([salespersonId, billingMonth])
@@ -562,6 +564,33 @@ model MonthlyFollowUp {
   @@unique([clientId, month])
   @@index([salespersonId, month])
   @@index([clientId])
+}
+
+// A monthly payment to a salesperson bundling their Approved commissions.
+// A statement is rendered from the linked commission rows.
+model Payout {
+  id               String    @id @default(cuid())
+  code             String    @unique // PO-202607-001
+  salespersonId    String
+  periodMonth      DateTime // the month the payout is issued for
+  status           String    @default("Draft") // payoutStatus option list
+  totalEarned      Decimal   @default(0) @db.Decimal(12, 2)
+  totalHeld        Decimal   @default(0) @db.Decimal(12, 2)
+  totalAdjustments Decimal   @default(0) @db.Decimal(12, 2)
+  netAmount        Decimal   @default(0) @db.Decimal(12, 2)
+  paidDate         DateTime?
+  method           String?
+  reference        String?
+  proofUrl         String? // reference/link only
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  salesperson Salesperson  @relation(fields: [salespersonId], references: [id])
+  commissions Commission[]
+
+  @@index([salespersonId])
+  @@index([status])
 }
 
 // Public "Start Your Website" application. Creates a CRM lead on submit; the

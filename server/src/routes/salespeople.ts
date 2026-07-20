@@ -5,6 +5,7 @@ import { prisma } from "../lib/db.js";
 import { hashPassword } from "../lib/auth.js";
 import { requireSalesAdmin, nextSalespersonCode } from "../lib/sales.js";
 import { invoiceCalc, toNum, money, firstOfMonth, monthKey } from "../lib/calc.js";
+import { parseMonthKey } from "../lib/http.js";
 import { logActivity } from "../lib/activity.js";
 
 const router = Router();
@@ -162,16 +163,26 @@ router.patch("/:id", requireSalesAdmin, async (req, res) => {
   res.json({ salesperson: serialize(updated) });
 });
 
-// ---- deactivate (admin) ---------------------------------------------------
+// ---- deactivate / leaver workflow (admin) ---------------------------------
+// Stops FUTURE commissions after finalEligibleCommissionMonth, keeps everything
+// already earned, disables the login, and reports the clients that now need
+// reassignment (kept Active so an owner can transfer them).
 router.post("/:id/deactivate", requireSalesAdmin, async (req, res) => {
   const existing = await prisma.salesperson.findFirst({ where: { id: req.params.id, deletedAt: null } });
   if (!existing) return res.status(404).json({ error: "Salesperson not found" });
   const status = (req.body?.status as string) || "Left Company";
-  const updated = await prisma.salesperson.update({ where: { id: existing.id }, data: { status, endDate: new Date(), departureReason: req.body?.reason ?? null } });
-  // Remove portal access
+  // Last month they still earn commission (default: the current month).
+  const finalEligibleCommissionMonth = parseMonthKey(req.body?.finalEligibleCommissionMonth) ?? firstOfMonth(new Date());
+
+  const updated = await prisma.salesperson.update({
+    where: { id: existing.id },
+    data: { status, endDate: new Date(), departureReason: req.body?.reason ?? null, finalEligibleCommissionMonth },
+  });
   if (existing.userId) await prisma.user.update({ where: { id: existing.userId }, data: { active: false } });
-  await logActivity(req, "Salesperson", updated.id, "deactivate", `Deactivated salesperson ${updated.code} (${status})`);
-  res.json({ salesperson: serialize(updated) });
+
+  const activeAssignments = await prisma.clientAssignment.count({ where: { currentSalespersonId: existing.id, status: "Active" } });
+  await logActivity(req, "Salesperson", updated.id, "deactivate", `Deactivated salesperson ${updated.code} (${status}); final eligible month ${monthKey(finalEligibleCommissionMonth)}`);
+  res.json({ salesperson: serialize(updated), clientsToReassign: activeAssignments });
 });
 
 export default router;

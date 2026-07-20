@@ -4,7 +4,8 @@ import { api } from "../../lib/api";
 import type { Salesperson, Lead, Assignment } from "../../lib/salesTypes";
 import { money, num, fmtDate, fmtMonth, pct } from "../../lib/format";
 import { Page, PageHeader } from "../../components/Page";
-import { Card, Spinner, ErrorState, EmptyState, StatusPill, Detail } from "../../components/ui";
+import { Card, Spinner, ErrorState, EmptyState, StatusPill, Detail, Field } from "../../components/ui";
+import { Modal } from "../../components/Modal";
 import SalespersonForm from "./SalespersonForm";
 
 const TABS = ["Overview", "Leads", "Assigned Clients"] as const;
@@ -21,6 +22,7 @@ export default function SalespersonProfile() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reassigning, setReassigning] = useState<Assignment | null>(null);
 
   function load() {
     setLoading(true); setError(null);
@@ -34,9 +36,13 @@ export default function SalespersonProfile() {
   useEffect(load, [id]);
 
   async function deactivate() {
-    if (!confirm("Deactivate this salesperson? Their portal login will be disabled and no new commission will generate.")) return;
+    if (!confirm("Deactivate this salesperson? Their portal login will be disabled and no new commission will generate after this month. Commissions already earned are kept.")) return;
     setBusy(true);
-    try { await api.post(`/salespeople/${id}/deactivate`, {}); load(); } finally { setBusy(false); }
+    try {
+      const r = await api.post<{ clientsToReassign: number }>(`/salespeople/${id}/deactivate`, {});
+      load();
+      if (r.clientsToReassign > 0) alert(`${r.clientsToReassign} client(s) still assigned to them. Reassign each from the Assigned Clients tab.`);
+    } finally { setBusy(false); }
   }
 
   if (loading && !sp) return <Page><div className="py-16 text-center"><span className="inline-block"><Spinner /></span></div></Page>;
@@ -107,11 +113,59 @@ export default function SalespersonProfile() {
             { h: "Commission", c: (a) => <span className="tnum">{a.commissionMethod === "Fixed" ? money(a.commissionAmount ?? 0) : `${a.commissionPercent}%`}</span>, align: "right" },
             { h: "Since", c: (a) => fmtMonth(a.effectiveBillingMonth) },
             { h: "Status", c: (a) => <StatusPill status={a.status} /> },
+            { h: "", c: (a) => a.status === "Active"
+              ? <button className="btn" style={{ padding: "0.3rem 0.6rem", fontSize: "0.78rem" }} onClick={(e) => { e.stopPropagation(); setReassigning(a); }}>Reassign</button>
+              : null, align: "right" },
           ]} />
       )}
 
       {editing && <SalespersonForm open={editing} existing={sp} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
+      {reassigning && <ReassignModal assignment={reassigning} fromId={sp.id} onClose={() => setReassigning(null)} onDone={() => { setReassigning(null); load(); }} />}
     </Page>
+  );
+}
+
+function ReassignModal({ assignment, fromId, onClose, onDone }: { assignment: Assignment; fromId: string; onClose: () => void; onDone: () => void }) {
+  const [people, setPeople] = useState<Salesperson[]>([]);
+  const [toSalespersonId, setTo] = useState("");
+  const [recipient, setRecipient] = useState<"new" | "current">("new");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<{ items: Salesperson[] }>("/salespeople").then((r) => setPeople(r.items.filter((s) => s.status === "Active" && s.id !== fromId))).catch(() => {});
+  }, [fromId]);
+
+  async function submit() {
+    setBusy(true); setError(null);
+    try { await api.post(`/assignments/${assignment.id}/transfer`, { toSalespersonId, transitionMonthRecipient: recipient, reason: reason || null }); onDone(); }
+    catch (e: any) { setError(e.message || "Could not reassign"); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Reassign ${assignment.clientName}`}
+      footer={<>
+        <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className="btn btn-primary" onClick={submit} disabled={busy || !toSalespersonId}>{busy ? "Reassigning…" : "Reassign"}</button>
+      </>}>
+      {error && <div className="pill pill-crit mb-3 w-full justify-center py-2">{error}</div>}
+      <Field label="New salesperson">
+        <select className="input" value={toSalespersonId} onChange={(e) => setTo(e.target.value)}>
+          <option value="">Select…</option>
+          {people.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.fullName}</option>)}
+        </select>
+      </Field>
+      <div className="mt-3">
+        <span className="label">Who earns this month's commission?</span>
+        <div className="mt-1 flex flex-col gap-1.5 text-sm">
+          <label className="flex items-center gap-2"><input type="radio" checked={recipient === "new"} onChange={() => setRecipient("new")} /> The new salesperson</label>
+          <label className="flex items-center gap-2"><input type="radio" checked={recipient === "current"} onChange={() => setRecipient("current")} /> Keep it with the current one</label>
+        </div>
+      </div>
+      <div className="mt-3"><Field label="Reason (optional)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. salesperson left, client request…" /></Field></div>
+      <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>The original salesperson who brought the client is always preserved. Future months go to the new salesperson.</p>
+    </Modal>
   );
 }
 

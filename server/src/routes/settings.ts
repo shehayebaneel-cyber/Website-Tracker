@@ -55,7 +55,7 @@ router.post("/options/:id/enable", async (req, res) => {
 // ---- update config --------------------------------------------------------
 router.patch("/config", async (req, res) => {
   const body = req.body as Record<string, unknown>;
-  const allowed = ["currency", "reminderWindowDays", "company", "defaultBillingDay"];
+  const allowed = ["currency", "reminderWindowDays", "company", "defaultBillingDay", "salesSettings"];
   for (const key of Object.keys(body)) {
     if (!allowed.includes(key)) continue;
     const value = typeof body[key] === "string" ? (body[key] as string) : JSON.stringify(body[key]);

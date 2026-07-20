@@ -96,6 +96,15 @@ export async function nextCommissionCode(tx: Tx, date: Date): Promise<string> {
   return `${prefix}${pad(max + 1, 3)}`;
 }
 
+/** PO-202607-001 for monthly salesperson payouts. */
+export async function nextPayoutCode(tx: Tx, date: Date): Promise<string> {
+  const prefix = `PO-${ym(date)}-`;
+  const rows = await tx.payout.findMany({ where: { code: { startsWith: prefix } }, select: { code: true } });
+  let max = 0;
+  for (const r of rows) { const n = parseInt(r.code.replace(prefix, ""), 10); if (n > max) max = n; }
+  return `${prefix}${pad(max + 1, 3)}`;
+}
+
 // Internal ticket status -> customer-friendly label (§10).
 export function friendlyStatus(status: string): string {
   const map: Record<string, string> = {

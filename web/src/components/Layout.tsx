@@ -33,6 +33,7 @@ const NAV: NavItem[] = [
   { to: "/sales/clients", label: "My Clients", icon: "◍", section: "salesClients", group: "sales" },
   { to: "/sales/followups", label: "Follow-ups", icon: "◷", section: "followUps", group: "sales" },
   { to: "/sales/commissions", label: "Commissions", icon: "◎", section: "commissions", group: "sales" },
+  { to: "/sales/payouts", label: "Payouts", icon: "▦", section: "payouts", group: "sales" },
 ];
 
 function useTheme() {

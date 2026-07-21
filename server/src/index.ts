@@ -103,13 +103,24 @@ app.use("/api/followups", attachSalesContext, followupsRouter);
 app.use("/api/payouts", attachSalesContext, payoutsRouter);
 app.use("/api/applications", requireSection("applications"), applicationsRouter);
 
-// In production, serve the built web app from the same origin as the API.
+// In production, serve BOTH front-ends from the same origin as the API:
+//   /       -> public marketing site (public/dist)
+//   /app    -> admin dashboard (web/dist, built with base "/app/")
+//   /api/*  -> handled by the routers above
 // Same-origin keeps the session cookie simple (no cross-site CORS/secure quirks).
 if (process.env.NODE_ENV === "production") {
   const webDist = path.resolve(__dirname, "../../web/dist");
-  app.use(express.static(webDist));
-  // SPA fallback for any non-API route.
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(webDist, "index.html")));
+  const publicDist = path.resolve(__dirname, "../../public/dist");
+
+  // Admin dashboard under /app (assets live at /app/assets/*).
+  // redirect:false so "/app" serves index.html directly instead of 301 -> "/app/".
+  app.use("/app", express.static(webDist, { redirect: false }));
+  app.get(/^\/app(\/.*)?$/, (_req, res) => res.sendFile(path.join(webDist, "index.html")));
+
+  // Public marketing site at the root.
+  app.use(express.static(publicDist));
+  // SPA fallback for anything that isn't /api/* (and /app/* is already handled above).
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(publicDist, "index.html")));
 }
 
 // Central error handler.

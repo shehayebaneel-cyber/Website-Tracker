@@ -10,9 +10,12 @@ RUN apt-get update -y \
 WORKDIR /app
 COPY . .
 
-# Build the web app (needs dev deps: vite + tsc). --include=dev forces them even
-# if NODE_ENV=production leaks into the build.
+# Build the admin dashboard (served at /app) — needs dev deps: vite + tsc.
+# --include=dev forces them even if NODE_ENV=production leaks into the build.
 RUN cd web && npm install --include=dev && npm run build
+
+# Build the public marketing site (served at /).
+RUN cd public && npm install --include=dev && npm run build
 
 # Build the server (postinstall + build run prisma generate for linux, then tsc).
 RUN cd server && npm install --include=dev && npm run build

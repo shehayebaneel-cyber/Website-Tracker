@@ -8,7 +8,7 @@ services:
   - type: web
     name: website-tracker
     runtime: node
-    region: frankfurt # closest to Lebanon; change if preferred
+    region: ohio # matches the Neon DB region (us-east) so queries stay fast
     plan: starter
     buildCommand: >-
       cd web && npm install && npm run build &&
@@ -19,12 +19,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        sync: false # set to your Neon connection string in the dashboard
+        sync: false # Neon POOLED url (…-pooler…?sslmode=require&pgbouncer=true)
+      - key: DIRECT_URL
+        sync: false # Neon DIRECT url (no -pooler, ?sslmode=require) — for migrations
       - key: JWT_SECRET
         generateValue: true
-      - key: ADMIN_EMAIL
-        sync: false # first-run admin (seed); safe to remove after first deploy
-      - key: ADMIN_PASSWORD
-        sync: false
-      - key: ADMIN_NAME
-        value: Aneel
+      # Admin user is pre-seeded on the Neon DB, so ADMIN_* are not needed here.

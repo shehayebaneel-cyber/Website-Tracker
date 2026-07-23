@@ -223,7 +223,7 @@ function AddOnCard({ addOn: a, catalogue }: { addOn: CatalogueAddOn; catalogue: 
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>{addOnPrice(a)}</span>
-        <Link to={`/start?feature=${a.key}`} className="btn btn-dark" style={{ padding: "0.65rem 1.1rem", fontSize: "0.88rem" }}>Request this feature</Link>
+        <Link to={`/builder?feature=${a.key}`} className="btn btn-dark" style={{ padding: "0.65rem 1.1rem", fontSize: "0.88rem" }}>Add to my plan</Link>
       </div>
     </div>
   );

@@ -142,7 +142,35 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   Feature cards link to `/start?feature=<addOnKey>`; `Start.tsx` resolves those keys to **names
   via the catalogue** (never from the URL text) into "Anything else you need?", de-duplicating
   so a re-mount or saved draft can't list a feature twice. The old `?module=` prefill still works.
-- Phases D–G (Plan Builder, Help Me Choose, admin editor, mobile pass) are next.
+- **Phase D — DONE** (Plan Builder, `/builder`, `public/src/pages/Builder.tsx`).
+  **The public app does not copy the engine — it imports it.** `public/vite.config.ts` aliases
+  `@engine` → `../server/src/lib/pricing.ts` (+ `server.fs.allow: [".."]`, matching `paths` in
+  `public/tsconfig.json`; Docker `COPY . .` runs before the public build, so it resolves in
+  production too). `src/lib/quote.ts` adapts the API payload to the engine's shape
+  (`toEngineCatalogue` — the API nests a plan's allowances under `included`), and exposes
+  `priceSelection`, `allowanceFor` and `quoteMessage` (the WhatsApp text, built from the quote).
+  **Verified parity: 10 selections, client vs `POST /quote`, byte-identical JSON** — covering
+  escalation, recursive auto-add, capacity, quotation items, one-time work and a blocked
+  selection. Builder steps: plan → core system → capacity steppers (allowance-aware, respect
+  `maxSteps`) → features by category → contact + submit. The summary shows every decision the
+  engine made *for* the customer (escalations, auto-added dependencies, issues), the monthly /
+  one-time / included / quotation / external groups, and the recommendation with a switch
+  button. Mobile gets a sticky total bar (`.builder-bar`, padded clear of the WhatsApp FAB).
+  Plan-card CTAs and feature-card CTAs now open the builder (`?plan=`, `?feature=`).
+- **Two bugs found and fixed while verifying Phase D** (both in Phase A code):
+  1. `recommend()` offered a **downgrade to a plan that cannot do what was asked**: pricing a
+     booking setup against Basic silently dropped the core system, so "$10/month" looked like a
+     $10 saving. `priced()` now rejects an alternative whose resolved `coreSystem` differs from
+     the requested one. Covered by 2 new assertions (**42 total**).
+  2. Both public routers shared **one rate-limit bucket across every limiter in the file**, so a
+     burst of cheap `/quote` calls (or file uploads in `public.ts`) used up the 10/min budget for
+     actually submitting. Each limiter now owns its bucket.
+- Verified end-to-end: `CFG-202607-001` ($41/mo — Standard + booking, Loyalty auto-adding
+  Customer Accounts, SMS Reminders, +30 services $6) is stored with its full breakdown snapshot.
+  **No Lead was created because this DB has no Salesperson rows** — the documented fallback
+  (the configuration is never lost); leads will start being created once a salesperson exists.
+  Test row to delete later: `CFG-202607-001` "[Test] Phase D Check".
+- Phases E–G (Help Me Choose, admin pricing editor, mobile pass) are next.
 
 ## Sales module (commission-only sales team)
 - **Roles**: added `SALESPERSON` + `MANAGER` to `lib/perms.ts` with new sales sections.

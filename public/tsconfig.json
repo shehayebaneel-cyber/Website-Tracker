@@ -15,7 +15,13 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    // Mirrors the alias in vite.config.ts — the pricing engine is shared with
+    // the server rather than copied into this app.
+    "paths": {
+      "@engine": ["../server/src/lib/pricing.ts"]
+    }
   },
   "include": ["src"]
 }

@@ -102,7 +102,9 @@ export function PlanCard({ plan, full }: { plan: CataloguePlan; full?: boolean }
       {plan.bestFor && <p className="mt-5 text-xs" style={{ color: "var(--muted)" }}>{plan.bestFor}</p>}
 
       <div className="mt-5 flex flex-col gap-2.5">
-        <Link to={`/start?plan=${plan.key}`} className={`btn btn-block ${popular || premium ? "btn-primary" : "btn-dark"}`}>{plan.ctaLabel}</Link>
+        {/* The CTA is a *customize* invitation ("Customize Basic", "Build Your
+            Premium System"), so it opens the builder on this plan. */}
+        <Link to={`/builder?plan=${plan.key}`} className={`btn btn-block ${popular || premium ? "btn-primary" : "btn-dark"}`}>{plan.ctaLabel}</Link>
         {!full && <Link to="/plans" className="btn btn-ghost btn-block">View full plan</Link>}
       </div>
     </div>

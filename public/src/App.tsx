@@ -5,6 +5,7 @@ import Footer from "./components/Footer";
 import { WhatsAppFab } from "./components/ui";
 import Home from "./pages/Home";
 import Plans from "./pages/Plans";
+import Builder from "./pages/Builder";
 import BusinessSystems from "./pages/BusinessSystems";
 import OurWork from "./pages/OurWork";
 import HowItWorks from "./pages/HowItWorks";
@@ -37,6 +38,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/plans" element={<Plans />} />
+          <Route path="/builder" element={<Builder />} />
           <Route path="/business-systems" element={<BusinessSystems />} />
           <Route path="/our-work" element={<OurWork />} />
           <Route path="/how-it-works" element={<HowItWorks />} />

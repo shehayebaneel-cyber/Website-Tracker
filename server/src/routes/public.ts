@@ -14,8 +14,10 @@ import { nextApplicationCode, nextLeadCode, nextSupportCode, friendlyStatus } fr
 const router = Router();
 
 // ---- naive in-memory rate limit (per IP) ----
-const hits = new Map<string, number[]>();
+// Each limiter keeps its own bucket, so uploading files can't use up the
+// allowance for actually submitting the form those files belong to.
 function rateLimit(max: number, windowMs: number) {
+  const hits = new Map<string, number[]>();
   return (req: any, res: any, next: any) => {
     const ip = req.ip || req.socket?.remoteAddress || "unknown";
     const now = Date.now();

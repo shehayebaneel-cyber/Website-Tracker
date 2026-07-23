@@ -195,6 +195,23 @@ async function run(cat: Catalogue) {
     check("missing core system blocks submission", q.issues.some((i) => i.code === "core-required" && i.blocking), JSON.stringify(q.issues));
   }
   {
+    // A cheaper plan that cannot do what was asked for is not a saving.
+    // Basic has no core system, so pricing a booking setup against it drops
+    // the booking system and makes $10 look like a $10/month saving.
+    const q = quote(cat, { planKey: "standard", coreSystem: "booking" });
+    check(
+      "never recommends a plan that drops the chosen core system",
+      q.recommendation?.switchTo !== "basic",
+      JSON.stringify(q.recommendation)
+    );
+    const s = quote(cat, { planKey: "standard", coreSystem: "store" });
+    check(
+      "same for an online store",
+      s.recommendation?.switchTo !== "basic",
+      JSON.stringify(s.recommendation)
+    );
+  }
+  {
     // Bundled features never carry their own price
     const q = quote(cat, {
       planKey: "premium", coreSystem: "store", addOnKeys: ["low-stock-alerts"],

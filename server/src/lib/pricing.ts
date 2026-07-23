@@ -501,6 +501,10 @@ function recommend(
     // and if it can actually satisfy the configuration.
     if (q.planKey !== planKey) return null;
     if (q.issues.some((i) => i.blocking)) return null;
+    // A plan with no core system drops the customer's booking or store choice
+    // silently and so looks cheaper than it is. Cheaper because it does less is
+    // not a saving, and must never be offered as one.
+    if ((sel.coreSystem ?? null) !== q.coreSystem) return null;
     return q.monthlyTotal;
   };
 

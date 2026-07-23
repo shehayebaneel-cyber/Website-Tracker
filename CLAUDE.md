@@ -10,8 +10,10 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
 ## Stack & layout
 - web/ (Vite + React + Tailwind v4 + React Router + Recharts) — port **5180**
 - server/ (Express + Prisma + PostgreSQL, JWT-cookie auth, Zod) — port **4020**
-- DB: local **portable** PostgreSQL 17 on port **5433**, data in `server/.pgdata`
-  (NOT a Windows service — `scripts/pg-start.ps1` after reboot). Binaries: `C:\Users\sheha\pgsql`.
+- DB: **per-PC, set in `server/.env`.** This PC points at the **Neon `dev` branch**
+  (no local server to start). The other PC runs local **portable** PostgreSQL 17 on port
+  **5433** (`server/.pgdata`, NOT a Windows service — `scripts/pg-start.ps1` after reboot,
+  binaries `C:\Users\sheha\pgsql`, so that script only works there).
 - Deploy: not yet deployed. Plan → Neon Postgres + Render (ask before first deploy).
 
 ## Commands
@@ -109,10 +111,38 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   Submissions are **re-priced server-side** — a browser total is never trusted. Creates a
   `PlanConfiguration` (+ CRM `Lead` when an active salesperson exists) with a snapshot
   breakdown so later price changes never rewrite what the customer was shown.
-- **Phase A — DONE** (model, engine, seed, tests, public API). Phases B–G (Plans page,
-  Features catalogue, Plan Builder, Help Me Choose, admin editor, mobile pass) are next;
-  the old static `public/src/data/content.ts` PLANS/MODULES arrays are still live until
-  Phase B replaces them.
+- **Phase A — DONE** (model, engine, seed, tests, public API).
+- **Phase B — DONE** (Plans page + plan cards from the DB). `public/src/lib/catalogue.ts`
+  types the `/catalogue` payload, fetches it **once per page load** (shared promise) and
+  exposes `useCatalogue()` + display helpers (`priceLabel`, `addOnPrice`, `inclusionsFor`,
+  `coreVariants`). `PlanCard` now takes a `CataloguePlan`: DB price/`priceIsFrom`/`priceNote`,
+  heading, `ctaLabel`, `addOnHint`, and a **booking/store toggle** on plans whose inclusions
+  differ by core system (so a Standard card never lists booking *and* store features).
+  Plans page: cards, comparison table (columns generated from the plans themselves, `note`
+  under the label, "Included"/"Not available" → check/dash), external costs and terms — all
+  from the DB. Home renders the same cards + the entry price. On fetch failure the pages show
+  a WhatsApp fallback and **never invent a price**. Removed `PLANS`/`Plan` from `content.ts`;
+  the FAQ page now shows general Qs from `content.ts` + **pricing Qs and the glossary from the
+  DB** (the static ones that hardcoded limits/eligibility were deleted).
+- **Phase C — DONE** (Business features & add-ons catalogue). `BusinessSystems.tsx` renders all
+  **55 sellable add-ons** from the DB with **search + category chips** (counts per category).
+  The 16 `bundled` sub-features that ship inside a parent get **no card** — they aren't sold
+  separately — but search still finds them *through* the parent (`matches()` searches name,
+  blurb, bestFor, `includes`, the parent's bundled children, and the category name; all words
+  must match). Card badges come from `addOnBadges()` in `lib/catalogue.ts`: Popular · "Included
+  with Premium" (`includedInPlans`) · "Standard or above" (`minPlan`, suppressed when it's the
+  lowest plan, when the add-on is already included in that plan, or when the item is bundled) ·
+  dependency notes (the DB's own sentence when set, else generated — `coreRequirementLabel`
+  uses the short "a booking system or an online store" form for two-part requirements).
+  Prices via `addOnPrice()` (monthly / one-time / "By quotation" / "Included"). Cards use the
+  **category** icon (add-on `icon` is null in seed data) with a `sparkle` fallback.
+  Home's module grid is now the 6 **categories** with a live "N features · from $X/month".
+  `content.ts` lost MODULES/EXTRA_MODULES/CHARGED_SEPARATELY — it now holds only price-free
+  brand copy (TRUST, STEPS, PROJECTS, general FAQ, CONTACT).
+  Feature cards link to `/start?feature=<addOnKey>`; `Start.tsx` resolves those keys to **names
+  via the catalogue** (never from the URL text) into "Anything else you need?", de-duplicating
+  so a re-mount or saved draft can't list a feature twice. The old `?module=` prefill still works.
+- Phases D–G (Plan Builder, Help Me Choose, admin editor, mobile pass) are next.
 
 ## Sales module (commission-only sales team)
 - **Roles**: added `SALESPERSON` + `MANAGER` to `lib/perms.ts` with new sales sections.

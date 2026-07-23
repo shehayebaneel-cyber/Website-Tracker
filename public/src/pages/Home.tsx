@@ -1,10 +1,18 @@
 import { Link } from "react-router-dom";
 import { Icon } from "../components/icons";
-import { SectionHeading, PlanCard, CTABand } from "../components/ui";
-import { PLANS, MODULES, TRUST, STEPS, PROJECTS } from "../data/content";
+import { SectionHeading, PlanCard, CTABand, LoadingCards, LoadError } from "../components/ui";
+import { TRUST, STEPS, PROJECTS } from "../data/content";
+import { useCatalogue, priceLabel } from "../lib/catalogue";
 import { ProjectCard } from "./OurWork";
 
 export default function Home() {
+  const { catalogue, loading, error } = useCatalogue();
+  const plans = catalogue?.plans ?? [];
+  const cheapest = plans.length ? Math.min(...plans.map((p) => p.basePrice)) : null;
+  const categories = catalogue?.categories ?? [];
+  // Sub-features that ship inside another feature aren't counted or priced here.
+  const sellable = (catalogue?.addOns ?? []).filter((a) => !(a.pricingType === "bundled" && a.bundledWith));
+
   return (
     <>
       {/* Hero */}
@@ -22,8 +30,9 @@ export default function Home() {
             <Link to="/plans" className="btn btn-primary" style={{ padding: "1.05rem 1.7rem" }}>View Website Plans <Icon.arrow /></Link>
             <Link to="/start" className="btn btn-outline" style={{ padding: "1.05rem 1.7rem" }}>Tell Us About Your Business</Link>
           </div>
-          <div className="rise mt-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm" style={{ background: "var(--cream)", color: "var(--ink-2)" }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--orange)" }} /> Plans starting from <b style={{ color: "var(--ink)" }}>$10 / month</b>
+          {/* The entry price comes from the catalogue — shown only once known. */}
+          <div className="rise mt-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm" style={{ background: "var(--cream)", color: "var(--ink-2)", visibility: cheapest == null ? "hidden" : undefined }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--orange)" }} /> Plans starting from <b style={{ color: "var(--ink)" }}>{priceLabel(cheapest ?? 0)} / month</b>
           </div>
         </div>
       </section>
@@ -50,8 +59,10 @@ export default function Home() {
         <div className="container">
           <SectionHeading center eyebrow="Simple monthly plans" title="Choose the plan that fits your business" sub="Every plan includes hosting, SSL and ongoing support. No large upfront cost." />
           <div className="mt-12 grid gap-6 md:grid-cols-3" style={{ alignItems: "start" }}>
-            {PLANS.map((p) => <PlanCard key={p.key} plan={p} />)}
+            {loading && <LoadingCards count={3} height={520} />}
+            {plans.map((p) => <PlanCard key={p.key} plan={p} />)}
           </div>
+          {error && <div className="mt-10"><LoadError message={error} /></div>}
         </div>
       </section>
 
@@ -60,14 +71,20 @@ export default function Home() {
         <div className="container">
           <SectionHeading center eyebrow="Premium business systems" title="Build the system your business needs" sub="Add advanced modules to your website as your business grows." />
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {MODULES.map((m) => {
-              const Ic = (Icon as any)[m.icon];
+            {loading && <LoadingCards count={6} height={190} />}
+            {categories.map((c) => {
+              const Ic = (Icon as any)[c.icon ?? "sparkle"] ?? Icon.sparkle;
+              const inCategory = sellable.filter((a) => a.categoryKey === c.key);
+              const from = Math.min(...inCategory.filter((a) => a.pricingType === "monthly" && a.price != null).map((a) => a.price!));
               return (
-                <Link key={m.key} to="/business-systems" className="card flex flex-col p-6 transition-transform hover:-translate-y-0.5" style={{ background: "var(--paper)" }}>
+                <Link key={c.key} to="/business-systems" className="card flex flex-col p-6 transition-transform hover:-translate-y-0.5" style={{ background: "var(--paper)" }}>
                   <span style={{ color: "var(--orange)" }}><Ic /></span>
-                  <div className="mt-3 font-semibold" style={{ fontFamily: "var(--font-display)" }}>{m.name}</div>
-                  <p className="mt-1.5 flex-1 text-sm" style={{ color: "var(--muted)" }}>{m.blurb}</p>
-                  <div className="mt-3 text-sm font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>{m.price}</div>
+                  <div className="mt-3 font-semibold" style={{ fontFamily: "var(--font-display)" }}>{c.name}</div>
+                  <p className="mt-1.5 flex-1 text-sm" style={{ color: "var(--muted)" }}>{c.blurb}</p>
+                  <div className="mt-3 text-sm font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>
+                    {inCategory.length} feature{inCategory.length === 1 ? "" : "s"}
+                    {Number.isFinite(from) && ` · from ${priceLabel(from)}/month`}
+                  </div>
                 </Link>
               );
             })}

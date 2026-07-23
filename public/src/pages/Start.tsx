@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/icons";
 import { waLink } from "../data/content";
+import { loadCatalogue } from "../lib/catalogue";
 
 type Dict = Record<string, boolean>;
 interface Form {
@@ -69,6 +70,29 @@ export default function Start() {
     const plan = params.get("plan"); const mod = params.get("module"); const ref = params.get("ref");
     if (plan) set("plan", plan);
     if (mod) set("needs", { ...form.needs, [mod]: true });
+
+    // ?feature=<addOnKey> — arrives from a feature card. The catalogue owns the
+    // name, so the form asks for it rather than trusting the URL's text.
+    const features = params.getAll("feature");
+    if (features.length) {
+      loadCatalogue()
+        .then((cat) => {
+          const names = features
+            .map((k) => cat.addOns.find((a) => a.key === k)?.name)
+            .filter((n): n is string => Boolean(n));
+          if (names.length) {
+            setForm((f) => {
+              // Idempotent: a re-mount (or a saved draft) must not list a
+              // feature twice.
+              const fresh = names.filter((n) => !f.otherFeatures.includes(n));
+              if (!fresh.length) return f;
+              return { ...f, otherFeatures: [f.otherFeatures, ...fresh].filter(Boolean).join(", ") };
+            });
+          }
+        })
+        .catch(() => { /* the field simply stays empty */ });
+    }
+
     if (ref) {
       set("referralCode", ref);
       fetch(`/api/public/ref/${encodeURIComponent(ref)}`).then((r) => r.json()).then((d) => { if (d.valid) setRefName(d.salespersonName); }).catch(() => {});

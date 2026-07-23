@@ -33,20 +33,20 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  activity     ActivityLog[]
-  salesperson  Salesperson?
-  client       Client?
+  activity    ActivityLog[]
+  salesperson Salesperson?
+  client      Client?
 }
 
 // ---------------------------------------------------------------------------
 // Configurable dropdown option lists (Settings page manages these)
 // ---------------------------------------------------------------------------
 model OptionList {
-  id       String  @id @default(cuid())
-  listKey  String // e.g. "clientStatus", "servicePlan", "expenseCategory"
-  value    String
-  order    Int     @default(0)
-  active   Boolean @default(true)
+  id      String  @id @default(cuid())
+  listKey String // e.g. "clientStatus", "servicePlan", "expenseCategory"
+  value   String
+  order   Int     @default(0)
+  active  Boolean @default(true)
 
   @@unique([listKey, value])
   @@index([listKey])
@@ -84,15 +84,15 @@ model Client {
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime? // soft delete / archive
 
-  portalUser User?          @relation(fields: [userId], references: [id])
-  websites Website[]
-  invoices Invoice[]
-  payments Payment[]
-  expenses Expense[]
-  tickets  SupportTicket[]
-  assignments      ClientAssignment[]
-  commissions      Commission[]
-  followUps        MonthlyFollowUp[]
+  portalUser        User?              @relation(fields: [userId], references: [id])
+  websites          Website[]
+  invoices          Invoice[]
+  payments          Payment[]
+  expenses          Expense[]
+  tickets           SupportTicket[]
+  assignments       ClientAssignment[]
+  commissions       Commission[]
+  followUps         MonthlyFollowUp[]
   convertedFromLead Lead?
 
   @@index([status])
@@ -116,20 +116,20 @@ model Website {
   // Subscription (per-website billing). Each active website carries its own
   // monthly subscription; one subscription invoice is generated per website per
   // billing month, and one $5 commission is earned when that invoice is paid.
-  monthlyFee            Decimal   @default(0) @db.Decimal(12, 2)
-  billingDay            Int       @default(1) // day-of-month the subscription is due (1-31)
-  subscriptionStartDate DateTime?
-  subscriptionActive    Boolean   @default(true)
-  includedUpdatesPerMonth Int     @default(3) // small updates included in the subscription each month
+  monthlyFee              Decimal   @default(0) @db.Decimal(12, 2)
+  billingDay              Int       @default(1) // day-of-month the subscription is due (1-31)
+  subscriptionStartDate   DateTime?
+  subscriptionActive      Boolean   @default(true)
+  includedUpdatesPerMonth Int       @default(3) // small updates included in the subscription each month
 
   // Domain
-  domainName        String?
-  domainProvider    String?
-  domainOwner       String? // Me | Client | Shared
-  domainCost        Decimal?  @db.Decimal(12, 2)
+  domainName         String?
+  domainProvider     String?
+  domainOwner        String? // Me | Client | Shared
+  domainCost         Decimal?  @db.Decimal(12, 2)
   domainPurchaseDate DateTime?
-  domainRenewalDate DateTime?
-  domainAutoRenew   Boolean   @default(false)
+  domainRenewalDate  DateTime?
+  domainAutoRenew    Boolean   @default(false)
 
   // Hosting
   hostingProvider    String?
@@ -146,8 +146,8 @@ model Website {
   repositoryUrl          String?
   deploymentPlatform     String?
   adminUrl               String?
-  analyticsInstalled     Boolean @default(false)
-  searchConsoleInstalled Boolean @default(false)
+  analyticsInstalled     Boolean   @default(false)
+  searchConsoleInstalled Boolean   @default(false)
   lastBackupDate         DateTime?
   lastWebsiteUpdate      DateTime?
   credentialLocation     String? // password-manager reference only — never a raw password
@@ -157,11 +157,11 @@ model Website {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  client   Client          @relation(fields: [clientId], references: [id])
-  expenses Expense[]
-  tickets  SupportTicket[]
+  client      Client             @relation(fields: [clientId], references: [id])
+  expenses    Expense[]
+  tickets     SupportTicket[]
   assignments ClientAssignment[]
-  invoices Invoice[]
+  invoices    Invoice[]
   commissions Commission[]
 
   @@index([clientId])
@@ -173,27 +173,27 @@ model Website {
 // Invoices  (an invoice snapshots its own amount — history never rewrites)
 // ---------------------------------------------------------------------------
 model Invoice {
-  id             String    @id @default(cuid())
-  code           String    @unique // INV-202607-C001-01
-  clientId       String
-  websiteId      String? // subscription invoices belong to a website; other charges may be client-level
-  invoiceDate    DateTime
-  billingMonth   DateTime // first day of the billing month
-  chargeType     String    @default("Monthly Subscription")
-  description    String?
-  dueDate        DateTime // resolved at creation (manual, or from client.billingDay)
-  amount         Decimal   @default(0) @db.Decimal(12, 2) // charge before discount (subscription = monthlyFee snapshot)
-  discount       Decimal   @default(0) @db.Decimal(12, 2)
-  reminderStatus String    @default("Not Sent")
+  id               String    @id @default(cuid())
+  code             String    @unique // INV-202607-C001-01
+  clientId         String
+  websiteId        String? // subscription invoices belong to a website; other charges may be client-level
+  invoiceDate      DateTime
+  billingMonth     DateTime // first day of the billing month
+  chargeType       String    @default("Monthly Subscription")
+  description      String?
+  dueDate          DateTime // resolved at creation (manual, or from client.billingDay)
+  amount           Decimal   @default(0) @db.Decimal(12, 2) // charge before discount (subscription = monthlyFee snapshot)
+  discount         Decimal   @default(0) @db.Decimal(12, 2)
+  reminderStatus   String    @default("Not Sent")
   lastReminderDate DateTime?
-  notes          String?
+  notes            String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  client   Client    @relation(fields: [clientId], references: [id])
-  website  Website?  @relation(fields: [websiteId], references: [id])
+  client   Client          @relation(fields: [clientId], references: [id])
+  website  Website?        @relation(fields: [websiteId], references: [id])
   payments Payment[]
   tickets  SupportTicket[]
 
@@ -275,26 +275,26 @@ model Expense {
 // Support / work tickets
 // ---------------------------------------------------------------------------
 model SupportTicket {
-  id                    String    @id @default(cuid())
-  code                  String    @unique // TKT-202607-001 (internal) or SUP-202607-001 (from website)
-  requestedDate         DateTime
-  requestSource         String?
-  clientId              String? // nullable: a website request may not match a client yet
-  websiteId             String?
-  category              String    @default("Other")
-  summary               String
-  priority              String    @default("Medium") // Low | Medium | High | Urgent
-  status                String    @default("Not Started")
-  assignedTo            String?
-  dueDate               DateTime?
-  completedDate         DateTime?
-  hoursSpent            Decimal   @default(0) @db.Decimal(8, 2)
-  includedInSubscription Boolean  @default(true)
-  extraCharge           Decimal   @default(0) @db.Decimal(12, 2)
-  clientApproved        Boolean   @default(false)
-  invoiceId             String?
-  requestLink           String?
-  notes                 String?
+  id                     String    @id @default(cuid())
+  code                   String    @unique // TKT-202607-001 (internal) or SUP-202607-001 (from website)
+  requestedDate          DateTime
+  requestSource          String?
+  clientId               String? // nullable: a website request may not match a client yet
+  websiteId              String?
+  category               String    @default("Other")
+  summary                String
+  priority               String    @default("Medium") // Low | Medium | High | Urgent
+  status                 String    @default("Not Started")
+  assignedTo             String?
+  dueDate                DateTime?
+  completedDate          DateTime?
+  hoursSpent             Decimal   @default(0) @db.Decimal(8, 2)
+  includedInSubscription Boolean   @default(true)
+  extraCharge            Decimal   @default(0) @db.Decimal(12, 2)
+  clientApproved         Boolean   @default(false)
+  invoiceId              String?
+  requestLink            String?
+  notes                  String?
 
   // public "Client Support" intake (from the website)
   requestType       String? // detailed customer-facing type (Website Not Opening, Update Price, ...)
@@ -367,17 +367,17 @@ model ActivityLog {
 }
 
 model Notification {
-  id         String    @id @default(cuid())
-  type       String // invoiceOverdue | domainRenewal | sslExpiry | ...
-  severity   String    @default("info") // info | warn | attention | critical
-  entityType String?
-  entityId   String?
-  userId     String? // target a specific user (e.g. a salesperson)
-  message    String
-  dueDate    DateTime?
-  read       Boolean   @default(false)
+  id          String    @id @default(cuid())
+  type        String // invoiceOverdue | domainRenewal | sslExpiry | ...
+  severity    String    @default("info") // info | warn | attention | critical
+  entityType  String?
+  entityId    String?
+  userId      String? // target a specific user (e.g. a salesperson)
+  message     String
+  dueDate     DateTime?
+  read        Boolean   @default(false)
   dismissedAt DateTime?
-  createdAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([read])
   @@index([type])
@@ -389,41 +389,41 @@ model Notification {
 // ===========================================================================
 
 model Salesperson {
-  id                       String    @id @default(cuid())
-  code                     String    @unique // SP001
-  userId                   String?   @unique // linked login account (role SALESPERSON)
-  fullName                 String
-  photoUrl                 String?
-  phone                    String?
-  email                    String?
-  city                     String? // city or territory
-  startDate                DateTime?
-  endDate                  DateTime? // final working date
-  status                   String    @default("Applicant") // Applicant|Active|Paused|Inactive|Left Company|Terminated
-  commissionMethod         String    @default("Fixed") // Fixed | Percentage (default plan)
-  commissionAmount         Decimal   @default(5) @db.Decimal(12, 2) // fixed $ per paid website / month
-  commissionPercent        Decimal   @default(25) @db.Decimal(5, 2) // % of collected subscription
-  paymentMethod            String? // Whish | Bank Transfer | Cash | ...
-  whishNumber              String?
-  bankInfo                 String?
-  agreementUrl             String? // reference/link only (file storage later)
-  agreementSignedDate      DateTime?
+  id                           String    @id @default(cuid())
+  code                         String    @unique // SP001
+  userId                       String?   @unique // linked login account (role SALESPERSON)
+  fullName                     String
+  photoUrl                     String?
+  phone                        String?
+  email                        String?
+  city                         String? // city or territory
+  startDate                    DateTime?
+  endDate                      DateTime? // final working date
+  status                       String    @default("Applicant") // Applicant|Active|Paused|Inactive|Left Company|Terminated
+  commissionMethod             String    @default("Fixed") // Fixed | Percentage (default plan)
+  commissionAmount             Decimal   @default(5) @db.Decimal(12, 2) // fixed $ per paid website / month
+  commissionPercent            Decimal   @default(25) @db.Decimal(5, 2) // % of collected subscription
+  paymentMethod                String? // Whish | Bank Transfer | Cash | ...
+  whishNumber                  String?
+  bankInfo                     String?
+  agreementUrl                 String? // reference/link only (file storage later)
+  agreementSignedDate          DateTime?
   finalEligibleCommissionMonth DateTime?
-  departureReason          String?
-  notes                    String?
+  departureReason              String?
+  notes                        String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  user                 User?              @relation(fields: [userId], references: [id])
-  leads                Lead[]
-  assignmentsOriginal  ClientAssignment[] @relation("OriginalSalesperson")
-  assignmentsCurrent   ClientAssignment[] @relation("CurrentSalesperson")
-  applications         Application[]
-  commissions          Commission[]
-  followUps            MonthlyFollowUp[]
-  payouts              Payout[]
+  user                User?              @relation(fields: [userId], references: [id])
+  leads               Lead[]
+  assignmentsOriginal ClientAssignment[] @relation("OriginalSalesperson")
+  assignmentsCurrent  ClientAssignment[] @relation("CurrentSalesperson")
+  applications        Application[]
+  commissions         Commission[]
+  followUps           MonthlyFollowUp[]
+  payouts             Payout[]
 
   @@index([status])
   @@index([deletedAt])
@@ -503,14 +503,14 @@ model ClientAssignment {
   commissionAmount  Decimal? @db.Decimal(12, 2)
   commissionPercent Decimal? @db.Decimal(5, 2)
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  client             Client      @relation(fields: [clientId], references: [id])
-  website            Website?    @relation(fields: [websiteId], references: [id])
-  originalSalesperson Salesperson @relation("OriginalSalesperson", fields: [originalSalespersonId], references: [id])
-  currentSalesperson  Salesperson @relation("CurrentSalesperson", fields: [currentSalespersonId], references: [id])
-  commissions        Commission[]
+  client              Client       @relation(fields: [clientId], references: [id])
+  website             Website?     @relation(fields: [websiteId], references: [id])
+  originalSalesperson Salesperson  @relation("OriginalSalesperson", fields: [originalSalespersonId], references: [id])
+  currentSalesperson  Salesperson  @relation("CurrentSalesperson", fields: [currentSalespersonId], references: [id])
+  commissions         Commission[]
 
   @@index([clientId])
   @@index([currentSalespersonId])
@@ -547,11 +547,11 @@ model Commission {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  website      Website          @relation(fields: [websiteId], references: [id])
-  client       Client           @relation(fields: [clientId], references: [id])
-  salesperson  Salesperson      @relation(fields: [salespersonId], references: [id])
-  assignment   ClientAssignment? @relation(fields: [assignmentId], references: [id])
-  payout       Payout?          @relation(fields: [payoutId], references: [id])
+  website     Website           @relation(fields: [websiteId], references: [id])
+  client      Client            @relation(fields: [clientId], references: [id])
+  salesperson Salesperson       @relation(fields: [salespersonId], references: [id])
+  assignment  ClientAssignment? @relation(fields: [assignmentId], references: [id])
+  payout      Payout?           @relation(fields: [payoutId], references: [id])
 
   @@unique([websiteId, billingMonth])
   @@index([salespersonId, billingMonth])
@@ -620,23 +620,23 @@ model Payout {
 // Public "Start Your Website" application. Creates a CRM lead on submit; the
 // richer intake (needs, content, files, consent) lives here linked to that lead.
 model Application {
-  id            String   @id @default(cuid())
-  code          String   @unique // APP-202607-001
-  status        String   @default("Application Received") // customer-friendly statuses (§20)
+  id     String @id @default(cuid())
+  code   String @unique // APP-202607-001
+  status String @default("Application Received") // customer-friendly statuses (§20)
 
   // Step 1 — about the business
-  businessName  String
-  category      String?
-  contactPerson String?
-  phone         String?
-  whatsapp      String?
-  email         String?
-  city          String?
-  country       String?
-  instagram     String?
+  businessName    String
+  category        String?
+  contactPerson   String?
+  phone           String?
+  whatsapp        String?
+  email           String?
+  city            String?
+  country         String?
+  instagram       String?
   existingWebsite String?
-  isOperating   Boolean  @default(true)
-  description   String?
+  isOperating     Boolean @default(true)
+  description     String?
 
   // Step 2 — what they need
   needType      String? // new | redesign
@@ -645,36 +645,254 @@ model Application {
   otherFeatures String?
 
   // Step 3 — content they have + uploaded files
-  hasContent    Json? // { logo, description, serviceList, prices, photos, ... }
-  files         Json? // [{ name, url, size, type }]
+  hasContent Json? // { logo, description, serviceList, prices, photos, ... }
+  files      Json? // [{ name, url, size, type }]
 
   // Step 4 — timeline & contact
   launchTimeline String?
-  contactMethod String?
-  bestTime      String?
-  meetingType   String?
+  contactMethod  String?
+  bestTime       String?
+  meetingType    String?
   additionalInfo String?
-  hearAbout     String?
-  referralCode  String?
+  hearAbout      String?
+  referralCode   String?
 
   // consent (§7 step 5)
-  consentContact  Boolean @default(false)
-  priceMayChange  Boolean @default(false)
-  privacyAgreed   Boolean @default(false)
+  consentContact Boolean @default(false)
+  priceMayChange Boolean @default(false)
+  privacyAgreed  Boolean @default(false)
 
   // sales / marketing connection (§17)
-  salespersonId String?
-  leadId        String?  @unique
+  salespersonId   String?
+  leadId          String? @unique
   marketingSource String?
-  campaign      String?
+  campaign        String?
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  archived  Boolean   @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  archived  Boolean  @default(false)
 
   salesperson Salesperson? @relation(fields: [salespersonId], references: [id])
   lead        Lead?        @relation(fields: [leadId], references: [id])
 
   @@index([status])
   @@index([salespersonId])
+}
+
+// ---------------------------------------------------------------------------
+// Pricing model (public site: Plans, Business Features & Add-ons, Plan Builder)
+//
+// Design rule: this is the SINGLE source of truth for every pricing surface.
+// Plan cards, the comparison table, the feature catalogue, the Plan Builder,
+// the WhatsApp message and the final summary all render from these tables, so
+// they can never contradict each other. Nothing here is hardcoded in the web
+// apps. Totals are always DERIVED by src/lib/pricing.ts - never stored on a
+// configuration except as an immutable snapshot of what the customer was shown.
+// ---------------------------------------------------------------------------
+
+model PricingPlan {
+  id          String  @id @default(cuid())
+  key         String  @unique // basic | standard | premium
+  name        String
+  heading     String // "Build your online presence"
+  description String
+  bestFor     String?
+
+  basePrice   Decimal @default(0) @db.Decimal(12, 2)
+  priceIsFrom Boolean @default(false) // renders "From $30"
+  priceNote   String  @default("/month")
+  ctaLabel    String  @default("Customize") // "Customize Basic" | "Build Your Premium System"
+  addOnHint   String? // sentence under the card about growing the plan
+
+  // Core system: does this plan pick booking / store, and may it have both?
+  coreSystemMode   String   @default("none") // none | choose-one | one-included-both-available
+  bothSystemsPrice Decimal? @db.Decimal(12, 2) // cost to add the 2nd core system
+
+  // Included allowances (null = not available on this plan)
+  includedSections  Int?
+  includedUpdates   Int  @default(0)
+  includedProducts  Int?
+  includedServices  Int?
+  includedStaff     Int?
+  includedLocations Int  @default(1)
+
+  popular Boolean @default(false)
+  order   Int     @default(0)
+  active  Boolean @default(true)
+
+  inclusions PlanInclusion[]
+
+  @@index([active, order])
+}
+
+// The bullet list on a plan card. coreSystem scopes a bullet to one variant so
+// a Standard Store customer never sees "Up to 3 bookable staff".
+model PlanInclusion {
+  id         String  @id @default(cuid())
+  planId     String
+  label      String
+  coreSystem String? // null = always shown | booking | store
+  order      Int     @default(0)
+  active     Boolean @default(true)
+
+  plan PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, order])
+}
+
+model AddOnCategory {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  name   String
+  blurb  String?
+  icon   String?
+  order  Int     @default(0)
+  active Boolean @default(true)
+
+  addOns AddOn[]
+}
+
+model AddOn {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  categoryId String
+  name       String
+  blurb      String
+  bestFor    String?
+  icon       String?
+  includes   String[] // bullet list on the feature card
+
+  // How this is charged.
+  pricingType String   @default("monthly") // monthly | onetime | quote | external | bundled
+  price       Decimal? @db.Decimal(12, 2) // null when quote/external/bundled
+  priceIsFrom Boolean  @default(true)
+  priceLabel  String? // overrides the rendered price when set
+
+  // Eligibility. minPlan is the lowest plan that may select this add-on;
+  // includedInPlans lists plans where it is ALREADY included (never charged).
+  minPlan         String   @default("standard") // basic | standard | premium
+  includedInPlans String[] @default([])
+  bundledWith     String? // add-on key this ships inside of (pricingType "bundled")
+
+  recommendedFor String[] @default([]) // BusinessType keys
+  popular        Boolean  @default(false)
+  order          Int      @default(0)
+  active         Boolean  @default(true)
+
+  category     AddOnCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  dependencies AddOnDependency[]
+
+  @@index([categoryId, order])
+  @@index([active])
+}
+
+// "Loyalty requires Customer Accounts", "Delivery requires Store or Ordering".
+model AddOnDependency {
+  id           String  @id @default(cuid())
+  addOnId      String
+  requiresType String  @default("addon") // addon | coreSystem
+  requiresKey  String // AddOn.key, or "booking" | "store" | "booking|store"
+  note         String? // shown when auto-adding the dependency
+
+  addOn AddOn @relation(fields: [addOnId], references: [id], onDelete: Cascade)
+
+  @@index([addOnId])
+}
+
+// Buyable capacity above a plan's included allowance. Repeatable: the customer
+// may add the same step several times (50 -> 100 -> 150 products).
+model CapacityUpgrade {
+  id                 String   @id @default(cuid())
+  key                String   @unique // products | services | staff | updates | locations
+  name               String
+  unitLabel          String // "products"
+  stepSize           Int // 50
+  pricePerStep       Decimal  @db.Decimal(12, 2)
+  maxSteps           Int? // null = unlimited
+  appliesToPlans     String[] @default([])
+  requiresCoreSystem String? // booking | store | null
+  helpText           String?
+  order              Int      @default(0)
+  active             Boolean  @default(true)
+}
+
+// Rows of the plan comparison table. Free text per column so a cell can say
+// "Choose one" or "Up to 30 with booking" rather than a misleading checkmark.
+model ComparisonRow {
+  id       String  @id @default(cuid())
+  label    String
+  basic    String
+  standard String
+  premium  String
+  note     String? // tooltip
+  order    Int     @default(0)
+  active   Boolean @default(true)
+}
+
+model PricingFaq {
+  id       String  @id @default(cuid())
+  question String
+  answer   String
+  order    Int     @default(0)
+  active   Boolean @default(true)
+}
+
+// Pricing terms (section 23) and the glossary tooltips (section 13).
+model PricingTerm {
+  id     String  @id @default(cuid())
+  kind   String  @default("term") // term | glossary | external
+  title  String? // glossary word, e.g. "Small update"
+  body   String
+  order  Int     @default(0)
+  active Boolean @default(true)
+
+  @@index([kind, order])
+}
+
+model BusinessType {
+  id                 String   @id @default(cuid())
+  key                String   @unique
+  name               String
+  icon               String?
+  recommendedPlan    String   @default("standard")
+  recommendedCore    String? // booking | store
+  priorityCategories String[] @default([])
+  priorityAddOns     String[] @default([])
+  order              Int      @default(0)
+  active             Boolean  @default(true)
+}
+
+// A configuration submitted from the Plan Builder. Snapshots what the customer
+// was shown so a later price change never rewrites their request.
+model PlanConfiguration {
+  id     String @id @default(cuid())
+  code   String @unique // CFG-202607-001
+  status String @default("New") // New | Contacted | Quoted | Converted | Closed
+
+  contactName  String?
+  businessName String?
+  phone        String?
+  email        String?
+  businessType String?
+  notes        String?
+
+  planKey        String
+  coreSystem     String? // booking | store | both
+  capacities     Json? // { products: 100, services: 30, ... }
+  selectedAddOns Json? // [{ key, name, pricingType, price, includedInPlan }]
+  quoteItems     Json? // [{ key, name }]
+
+  monthlyTotal Decimal @default(0) @db.Decimal(12, 2)
+  oneTimeTotal Decimal @default(0) @db.Decimal(12, 2)
+  breakdown    Json? // full engine output as shown to the customer
+
+  salespersonId String?
+  leadId        String? @unique
+  source        String  @default("Plan Builder")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  archived  Boolean  @default(false)
+
+  @@index([status])
 }

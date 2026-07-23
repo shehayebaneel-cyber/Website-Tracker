@@ -34,6 +34,7 @@ import followupsRouter from "./routes/followups.js";
 import payoutsRouter from "./routes/payouts.js";
 import portalRouter from "./routes/portal.js";
 import publicRouter from "./routes/public.js";
+import publicPricingRouter from "./routes/publicPricing.js";
 import applicationsRouter from "./routes/applications.js";
 import { requireSection } from "./lib/perms.js";
 import { attachSalesContext } from "./lib/sales.js";
@@ -55,6 +56,8 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, ts: new Date().toISOS
 app.use("/api/auth", authRouter);
 
 // Public (unauthenticated) website endpoints + uploaded files.
+// Pricing is mounted first so /api/public/pricing/* is never shadowed.
+app.use("/api/public/pricing", publicPricingRouter);
 app.use("/api/public", publicRouter);
 app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 

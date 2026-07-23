@@ -82,6 +82,38 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   `/uploads` so attachments render. Verified end-to-end desktop + mobile.
 - **Public Phase 4 (next)**: client login/portal (auth CLIENT role).
 
+## Pricing system (public site: Plans · Business Features & Add-ons · Plan Builder)
+- **Single source of truth is the DATABASE**, never the web apps. `PricingPlan`,
+  `PlanInclusion`, `AddOnCategory`, `AddOn`, `AddOnDependency`, `CapacityUpgrade`,
+  `ComparisonRow`, `PricingFaq`, `PricingTerm`, `BusinessType`, `PlanConfiguration`.
+  Plan cards, comparison table, feature catalogue, Plan Builder, WhatsApp message and
+  the final summary ALL render from it — that is what stops them contradicting.
+  **Never hardcode a price, limit or eligibility rule in `public/` or `web/`.**
+- **`server/src/lib/pricing.ts` is the engine** — pure, no Prisma/Express, so the public
+  app can mirror it and get identical numbers. `quote(catalogue, selection)` resolves:
+  dependency auto-add (recursive) · Premium-required plan escalation with a visible
+  reason · included-vs-charged against the FINAL plan (no duplicate charges) · capacity
+  above allowance · monthly/one-time/external/quotation split · plan recommendation.
+  Totals are DERIVED, never stored (same rule as `calc.ts`).
+- **Recommendations never lie**: `kind` is `saves` | `same` | `unlocks`. With current
+  prices Premium is never strictly cheaper than a Standard stack (Premium's $10 gap vs
+  ~$8 of included value), so it surfaces as `unlocks` — "for $2/month more" — not as a saving.
+- Seed: `npm run db:seed:pricing` (idempotent — upserts by key, only creates editable
+  content when empty, so admin edits survive). `PRICING_RESEED=true` forces a reset.
+  Defaults live in `prisma/pricingData.ts`; 3 plans, 71 add-ons, 6 categories.
+- **Tests: `npm run test:pricing`** — the spec's 9 scenarios + dependency/duplicate-charge
+  rules against the real catalogue. 40 assertions, no test framework. Run after any
+  pricing change.
+- Public API (unauthenticated, mounted BEFORE `requireAuth`): `GET /api/public/pricing/
+  catalogue`, `POST /api/public/pricing/quote`, `POST /api/public/pricing/configurations`.
+  Submissions are **re-priced server-side** — a browser total is never trusted. Creates a
+  `PlanConfiguration` (+ CRM `Lead` when an active salesperson exists) with a snapshot
+  breakdown so later price changes never rewrite what the customer was shown.
+- **Phase A — DONE** (model, engine, seed, tests, public API). Phases B–G (Plans page,
+  Features catalogue, Plan Builder, Help Me Choose, admin editor, mobile pass) are next;
+  the old static `public/src/data/content.ts` PLANS/MODULES arrays are still live until
+  Phase B replaces them.
+
 ## Sales module (commission-only sales team)
 - **Roles**: added `SALESPERSON` + `MANAGER` to `lib/perms.ts` with new sales sections.
   SALESPERSON has **row-level scoping** — `attachSalesContext` (lib/sales.ts) resolves their

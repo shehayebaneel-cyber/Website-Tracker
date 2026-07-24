@@ -536,4 +536,18 @@ export const CONTENT = [
   { key: "packs.sub", label: "Feature Packs page description", value: "Complete packs of related tools for $5/month each — never a long list of overlapping features." },
   { key: "builder.heading", label: "Builder heading", value: "Build your website" },
   { key: "builder.estimateNote", label: "Estimate disclaimer", value: "This is an estimate. Your final configuration will be reviewed and approved before development starts." },
+  { key: "guide.heading", label: "Questionnaire heading", value: "Help me build my website" },
+  { key: "guide.sub", label: "Questionnaire description", value: "Nine short questions. We'll suggest a starting point — and you can change any of it." },
+
+  // One question per core system and per feature pack, so the questionnaire is
+  // built from the catalogue rather than from a list in the web app. Add a
+  // system or a pack and its question appears; edit the wording here.
+  { key: "question.system.booking", label: "Question — Booking", value: "Do customers need to book appointments?" },
+  { key: "question.system.store", label: "Question — E-commerce", value: "Do customers need to buy or order products?" },
+  { key: "question.pack.capacity-scale", label: "Question — Capacity & Scale", value: "Do you have a large number of products or services?" },
+  { key: "question.pack.customers-loyalty", label: "Question — Customers & Loyalty", value: "Do you need customer accounts, loyalty or reviews?" },
+  { key: "question.pack.staff-operations", label: "Question — Staff & Operations", value: "Do staff members need their own logins and schedules?" },
+  { key: "question.pack.inventory-suppliers", label: "Question — Inventory & Suppliers", value: "Do you manage stock or suppliers?" },
+  { key: "question.pack.delivery-tracking", label: "Question — Delivery & Tracking", value: "Do you deliver orders to customers?" },
+  { key: "question.pack.insights-automation", label: "Question — Insights & Automation", value: "Do you need reports or automated reminders?" },
 ];

@@ -7,6 +7,7 @@ import { ConfigurationProvider } from "./lib/configuration";
 import Home from "./pages/Home";
 import Plans from "./pages/Plans";
 import Builder from "./pages/Builder";
+import Guide from "./pages/Guide";
 import BusinessSystems from "./pages/BusinessSystems";
 import OurWork from "./pages/OurWork";
 import HowItWorks from "./pages/HowItWorks";
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/builder" element={<Builder />} />
+          <Route path="/help-me-build" element={<Guide />} />
           <Route path="/business-systems" element={<BusinessSystems />} />
           <Route path="/our-work" element={<OurWork />} />
           <Route path="/how-it-works" element={<HowItWorks />} />

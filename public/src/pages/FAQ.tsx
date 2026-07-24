@@ -49,7 +49,7 @@ export default function FAQ() {
 
           {pricing.length > 0 && (
             <>
-              <GroupTitle>Pricing, plans & add-ons</GroupTitle>
+              <GroupTitle>Pricing, systems & packs</GroupTitle>
               <Accordion items={pricing} />
             </>
           )}

@@ -283,7 +283,7 @@ export default function Plans() {
       <CTABand
         title="Not sure what your business needs?"
         text="Answer a few questions and we'll suggest a starting point you can change."
-        primary={{ label: "Help me build my website", to: "/builder?guide=1" }}
+        primary={{ label: "Help me build my website", to: "/help-me-build" }}
         whatsappText="Hi IGNIS, which website setup fits my business?"
       />
     </>

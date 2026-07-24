@@ -208,5 +208,5 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
 - **Still deferred (need external accounts)**: automated email/WhatsApp *API* sending (current flow
   is manual-send, which is what the spec's review-before-send asks for), cloud file storage for
   receipt uploads, full .xlsx (vs CSV) import/export.
-- Sample/test data to delete: C002/C003 `[Sample]`; C004 Acme Bakery + C005 Olive Grove (import test);
+- Sample/test data to delete: website requests CFG-202607-001 + CFG-202607-002 [Test]; C002/C003 `[Sample]`; C004 Acme Bakery + C005 Olive Grove (import test);
   a `dev@test.local` DEVELOPER user; generated Aug-2026 invoices + a partial test payment.

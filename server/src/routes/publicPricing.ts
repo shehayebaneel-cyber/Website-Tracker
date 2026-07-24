@@ -5,19 +5,19 @@
 //
 //   GET  /catalogue      everything the pricing pages render from
 //   POST /quote          server-authoritative price for a selection
-//   POST /configurations submit a finished Plan Builder configuration
+//   POST /configurations submit a finished website configuration
 //
-// The public app may compute a live estimate client-side for responsiveness,
-// but /quote is the authority: the submitted configuration is always re-priced
-// here before being stored, so a tampered or stale client can never book a
-// price we never offered.
+// The public app computes a live estimate in the browser with the SAME engine
+// for responsiveness, but /quote is the authority: the submitted configuration
+// is always re-priced here before being stored, so a tampered or stale client
+// can never book a price we never offered.
 // ---------------------------------------------------------------------------
 
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { loadCatalogue } from "../lib/pricingCatalogue.js";
-import { quote } from "../lib/pricing.js";
+import { quote, maxStandardMonthly } from "../lib/pricing.js";
 import { nextLeadCode } from "../lib/sales.js";
 
 const router = Router();
@@ -44,104 +44,135 @@ function rateLimit(max: number, windowMs: number) {
 const money = (d: unknown) => (d == null ? null : Number(d));
 
 // ---------------------------------------------------------------------------
-// GET /catalogue — one payload for Plans, Features, the Builder and the FAQ.
+// GET /catalogue — one payload for the Pricing page, Feature Packs and Builder.
 // ---------------------------------------------------------------------------
 router.get("/catalogue", async (_req, res) => {
-  const [plans, categories, addOns, capacity, comparison, faqs, terms, businessTypes] =
-    await Promise.all([
-      prisma.pricingPlan.findMany({
-        where: { active: true },
-        orderBy: { order: "asc" },
-        include: {
-          inclusions: { where: { active: true }, orderBy: { order: "asc" } },
-        },
-      }),
-      prisma.addOnCategory.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
-      prisma.addOn.findMany({
-        where: { active: true },
-        orderBy: [{ order: "asc" }],
-        include: { dependencies: true, category: { select: { key: true } } },
-      }),
-      prisma.capacityUpgrade.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
-      prisma.comparisonRow.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
-      prisma.pricingFaq.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
-      prisma.pricingTerm.findMany({ where: { active: true }, orderBy: [{ kind: "asc" }, { order: "asc" }] }),
-      prisma.businessType.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
-    ]);
+  const [
+    base, systems, packs, oneTime, external,
+    comparison, setups, faqs, terms, businessTypes, content,
+  ] = await Promise.all([
+    prisma.baseWebsite.findFirst({
+      where: { active: true },
+      include: { inclusions: { where: { active: true }, orderBy: { order: "asc" } } },
+    }),
+    prisma.coreSystem.findMany({
+      where: { active: true },
+      orderBy: { order: "asc" },
+      include: {
+        inclusions: { where: { active: true }, orderBy: { order: "asc" } },
+        limits: { where: { active: true }, orderBy: { order: "asc" } },
+      },
+    }),
+    prisma.featurePack.findMany({
+      where: { active: true },
+      orderBy: { order: "asc" },
+      include: { features: { where: { active: true }, orderBy: { order: "asc" } } },
+    }),
+    prisma.oneTimeService.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.externalCost.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.comparisonRow.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.recommendedSetup.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.pricingFaq.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.pricingTerm.findMany({ where: { active: true }, orderBy: [{ kind: "asc" }, { order: "asc" }] }),
+    prisma.businessType.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.pricingContent.findMany({ where: { active: true } }),
+  ]);
+
+  // The advertised maximum is DERIVED from the catalogue, never a stored number
+  // that could fall out of step with the prices next to it.
+  const cat = await loadCatalogue();
 
   res.json({
-    plans: plans.map((p) => ({
-      key: p.key,
-      name: p.name,
-      heading: p.heading,
-      description: p.description,
-      bestFor: p.bestFor,
-      basePrice: money(p.basePrice),
-      priceIsFrom: p.priceIsFrom,
-      priceNote: p.priceNote,
-      ctaLabel: p.ctaLabel,
-      addOnHint: p.addOnHint,
-      coreSystemMode: p.coreSystemMode,
-      bothSystemsPrice: money(p.bothSystemsPrice),
-      included: {
-        sections: p.includedSections,
-        updates: p.includedUpdates,
-        products: p.includedProducts,
-        services: p.includedServices,
-        staff: p.includedStaff,
-        locations: p.includedLocations,
-      },
-      popular: p.popular,
-      order: p.order,
-      inclusions: p.inclusions.map((i) => ({ label: i.label, coreSystem: i.coreSystem })),
-    })),
-    categories: categories.map((c) => ({ key: c.key, name: c.name, blurb: c.blurb, icon: c.icon })),
-    addOns: addOns.map((a) => ({
-      key: a.key,
-      categoryKey: a.category.key,
-      name: a.name,
-      blurb: a.blurb,
-      bestFor: a.bestFor,
-      icon: a.icon,
-      includes: a.includes,
-      pricingType: a.pricingType,
-      price: money(a.price),
-      priceIsFrom: a.priceIsFrom,
-      priceLabel: a.priceLabel,
-      minPlan: a.minPlan,
-      includedInPlans: a.includedInPlans,
-      bundledWith: a.bundledWith,
-      recommendedFor: a.recommendedFor,
-      popular: a.popular,
-      dependencies: a.dependencies.map((d) => ({
-        requiresType: d.requiresType,
-        requiresKey: d.requiresKey,
-        note: d.note,
+    base: base && {
+      key: base.key,
+      name: base.name,
+      heading: base.heading,
+      description: base.description,
+      ctaLabel: base.ctaLabel,
+      price: money(base.price),
+      priceNote: base.priceNote,
+      includedSections: base.includedSections,
+      monthlyUpdates: base.monthlyUpdates,
+      inclusions: base.inclusions.map((i) => i.label),
+    },
+    systems: systems.map((s) => ({
+      key: s.key,
+      name: s.name,
+      shortName: s.shortName,
+      heading: s.heading,
+      description: s.description,
+      ctaLabel: s.ctaLabel,
+      price: money(s.price),
+      icon: s.icon,
+      order: s.order,
+      inclusions: s.inclusions.map((i) => ({ label: i.label, group: i.group })),
+      limits: s.limits.map((l) => ({
+        key: l.key,
+        label: l.label,
+        unitLabel: l.unitLabel,
+        baseValue: l.baseValue,
+        upgradedValue: l.upgradedValue,
+        helpText: l.helpText,
       })),
     })),
-    capacity: capacity.map((c) => ({
-      key: c.key,
-      name: c.name,
-      unitLabel: c.unitLabel,
-      stepSize: c.stepSize,
-      pricePerStep: money(c.pricePerStep),
-      maxSteps: c.maxSteps,
-      appliesToPlans: c.appliesToPlans,
-      requiresCoreSystem: c.requiresCoreSystem,
-      helpText: c.helpText,
+    packs: packs.map((p) => ({
+      key: p.key,
+      name: p.name,
+      blurb: p.blurb,
+      description: p.description,
+      price: money(p.price),
+      icon: p.icon,
+      requiresSystems: p.requiresSystems,
+      compatibleSystems: p.compatibleSystems,
+      requiresReason: p.requiresReason,
+      raisesLimits: p.raisesLimits,
+      recommendedFor: p.recommendedFor,
+      order: p.order,
+      features: p.features.map((f) => ({ label: f.label, group: f.group })),
+    })),
+    oneTime: oneTime.map((o) => ({
+      key: o.key,
+      name: o.name,
+      description: o.description,
+      category: o.category,
+      startingPrice: money(o.startingPrice),
+      isQuote: o.isQuote,
+    })),
+    external: external.map((e) => ({
+      key: e.key,
+      name: e.name,
+      description: e.description,
+      provider: e.provider,
+      costType: e.costType,
     })),
     comparison: comparison.map((r) => ({
-      label: r.label, basic: r.basic, standard: r.standard, premium: r.premium, note: r.note,
+      label: r.label,
+      informational: r.informational,
+      booking: r.booking,
+      store: r.store,
+      both: r.both,
+      note: r.note,
+    })),
+    setups: setups.map((s) => ({
+      key: s.key,
+      name: s.name,
+      description: s.description,
+      systemKeys: s.systemKeys,
+      packKeys: s.packKeys,
+      icon: s.icon,
     })),
     faqs: faqs.map((f) => ({ question: f.question, answer: f.answer })),
     glossary: terms.filter((t) => t.kind === "glossary").map((t) => ({ title: t.title, body: t.body })),
     terms: terms.filter((t) => t.kind === "term").map((t) => t.body),
-    externalCosts: terms.filter((t) => t.kind === "external").map((t) => t.body),
     businessTypes: businessTypes.map((b) => ({
-      key: b.key, name: b.name, icon: b.icon,
-      recommendedPlan: b.recommendedPlan, recommendedCore: b.recommendedCore,
-      priorityCategories: b.priorityCategories, priorityAddOns: b.priorityAddOns,
+      key: b.key,
+      name: b.name,
+      icon: b.icon,
+      recommendedSystems: b.recommendedSystems,
+      priorityPacks: b.priorityPacks,
     })),
+    content: Object.fromEntries(content.map((c) => [c.key, c.value])),
+    maxStandardMonthly: maxStandardMonthly(cat),
   });
 });
 
@@ -149,10 +180,10 @@ router.get("/catalogue", async (_req, res) => {
 // POST /quote — price a selection.
 // ---------------------------------------------------------------------------
 const selectionSchema = z.object({
-  planKey: z.string().min(1),
-  coreSystem: z.enum(["booking", "store", "both"]).nullish(),
-  capacities: z.record(z.number().int().min(0)).optional(),
-  addOnKeys: z.array(z.string()).max(100).optional(),
+  systemKeys: z.array(z.string()).max(10).optional(),
+  packKeys: z.array(z.string()).max(30).optional(),
+  oneTimeKeys: z.array(z.string()).max(40).optional(),
+  externalKeys: z.array(z.string()).max(40).optional(),
 });
 
 router.post("/quote", rateLimit(120, 60_000), async (req, res) => {
@@ -171,6 +202,7 @@ const submitSchema = selectionSchema.extend({
   phone: z.string().trim().min(4).max(40),
   email: z.string().trim().email().max(160).optional().or(z.literal("")),
   businessType: z.string().max(60).optional(),
+  contactMethod: z.string().max(40).optional(),
   notes: z.string().max(4000).optional(),
   // honeypot — bots fill hidden fields, humans never see them
   website: z.string().max(0).optional(),
@@ -193,6 +225,12 @@ async function nextConfigCode(tx: Tx): Promise<string> {
   return `${prefix}${String(max + 1).padStart(3, "0")}`;
 }
 
+/** "Booking and E-commerce Website" — how the customer described what they want. */
+function websiteTypeLabel(systemNames: string[]): string {
+  if (!systemNames.length) return "Informational Website";
+  return `${systemNames.join(" and ")} Website`;
+}
+
 router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
   const parsed = submitSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -204,19 +242,27 @@ router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
   // Re-price server-side. Never trust a total that arrived from the browser.
   const cat = await loadCatalogue();
   const q = quote(cat, {
-    planKey: d.planKey,
-    coreSystem: d.coreSystem ?? null,
-    capacities: d.capacities,
-    addOnKeys: d.addOnKeys,
+    systemKeys: d.systemKeys,
+    packKeys: d.packKeys,
+    oneTimeKeys: d.oneTimeKeys,
+    externalKeys: d.externalKeys,
   });
 
-  const blocking = q.issues.filter((i) => i.blocking);
+  // An unmet requirement is a configuration we could not actually build.
+  const blocking = [
+    ...q.unmet.filter((u) => u.blocking).map((u) => u.message),
+    ...q.issues.filter((i) => i.blocking).map((i) => i.message),
+  ];
   if (blocking.length) {
-    return res.status(400).json({ error: blocking[0].message, issues: blocking });
+    return res.status(400).json({ error: blocking[0], issues: blocking });
   }
 
   const now = new Date();
-  const planName = cat.plans.find((p) => p.key === q.planKey)?.name ?? q.planKey;
+  const systemNames = q.systemKeys.map(
+    (k) => cat.systems.find((s) => s.key === k)?.shortName ?? k
+  );
+  const typeLabel = websiteTypeLabel(systemNames);
+  const packNames = q.packKeys.map((k) => cat.packs.find((p) => p.key === k)?.name ?? k);
 
   const created = await prisma.$transaction(async (tx) => {
     const code = await nextConfigCode(tx);
@@ -244,14 +290,16 @@ router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
           category: d.businessType ?? null,
           source: "Website Inquiry",
           status: "New",
-          interestedService: `${planName} plan${q.coreSystem ? ` (${q.coreSystem})` : ""}`,
+          interestedService: typeLabel,
           proposedMonthly: q.monthlyTotal,
           proposedSetup: q.oneTimeTotal || null,
           notes:
-            `From Plan Builder configuration ${code}.\n` +
-            `Estimated $${q.monthlyTotal}/month` +
-            (q.oneTimeTotal ? ` + $${q.oneTimeTotal} one-time` : "") +
-            (q.quoteItems.length ? `\nNeeds quotation: ${q.quoteItems.map((i) => i.label).join(", ")}` : "") +
+            `From website configuration ${code}.\n` +
+            `${typeLabel} — $${q.monthlyTotal}/month` +
+            (packNames.length ? `\nFeature packs: ${packNames.join(", ")}` : "") +
+            (q.oneTime.length ? `\nOne-time: ${q.oneTime.map((l) => l.label).join(", ")}` : "") +
+            (q.oneTimeNeedsQuote ? `\nSome one-time work needs a quotation.` : "") +
+            (d.contactMethod ? `\nPrefers: ${d.contactMethod}` : "") +
             (d.notes ? `\n\n${d.notes}` : ""),
           nextFollowUpDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
         },
@@ -263,7 +311,7 @@ router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
         data: {
           leadId: lead.id,
           type: "note",
-          summary: `Plan configuration received (${code}) — ${planName}, $${q.monthlyTotal}/month`,
+          summary: `Website configuration received (${code}) — ${typeLabel}, $${q.monthlyTotal}/month`,
           createdBy: "website",
         },
       });
@@ -276,7 +324,7 @@ router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
             entityType: "Lead",
             entityId: lead.id,
             userId: salesperson.userId,
-            message: `New plan configuration: ${d.businessName || d.contactName} (${code}) — $${q.monthlyTotal}/month`,
+            message: `New website configuration: ${d.businessName || d.contactName} (${code}) — $${q.monthlyTotal}/month`,
           },
         });
       }
@@ -291,18 +339,27 @@ router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
         email: d.email || null,
         businessType: d.businessType ?? null,
         notes: d.notes ?? null,
-        planKey: q.planKey,
-        coreSystem: q.coreSystem,
-        capacities: (d.capacities ?? {}) as any,
-        selectedAddOns: [
-          ...q.monthly.filter((l) => l.kind === "addon").map((l) => ({ key: l.key, name: l.label, pricingType: "monthly", price: l.amount })),
-          ...q.oneTime.map((l) => ({ key: l.key, name: l.label, pricingType: "onetime", price: l.amount })),
-          ...q.included.map((l) => ({ key: l.key, name: l.label, pricingType: "included", price: 0 })),
-        ] as any,
-        quoteItems: q.quoteItems.map((l) => ({ key: l.key, name: l.label })) as any,
+
+        systemKeys: q.systemKeys,
+        packKeys: q.packKeys,
+        oneTimeKeys: q.oneTime.map((l) => l.key),
+        externalKeys: q.external.map((l) => l.key),
+
+        // Snapshot of exactly what was charged, in the customer's words.
+        selectedAddOns: q.monthly.map((l) => ({
+          key: l.key,
+          name: l.label,
+          kind: l.kind,
+          price: l.amount,
+        })) as any,
+        quoteItems: q.oneTime
+          .filter((l) => l.isQuote)
+          .map((l) => ({ key: l.key, name: l.label })) as any,
+
         monthlyTotal: q.monthlyTotal,
         oneTimeTotal: q.oneTimeTotal,
         breakdown: q as any,
+
         salespersonId: salesperson?.id ?? null,
         leadId,
       },
@@ -312,9 +369,10 @@ router.post("/configurations", rateLimit(10, 60_000), async (req, res) => {
 
   res.status(201).json({
     reference: created.code,
+    websiteType: typeLabel,
     monthlyTotal: q.monthlyTotal,
     oneTimeTotal: q.oneTimeTotal,
-    needsQuotation: q.quoteItems.length > 0,
+    needsQuotation: q.oneTimeNeedsQuote,
   });
 });
 

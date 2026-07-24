@@ -690,143 +690,189 @@ model Application {
 // configuration except as an immutable snapshot of what the customer was shown.
 // ---------------------------------------------------------------------------
 
-model PricingPlan {
-  id          String  @id @default(cuid())
-  key         String  @unique // basic | standard | premium
-  name        String
-  heading     String // "Build your online presence"
+// The one base website every customer starts from. A single active row.
+model BaseWebsite {
+  id          String @id @default(cuid())
+  key         String @unique @default("base")
+  name        String // "Base Informational Website"
+  heading     String // "Start with your business website"
   description String
-  bestFor     String?
+  ctaLabel    String @default("Start with Informational")
 
-  basePrice   Decimal @default(0) @db.Decimal(12, 2)
-  priceIsFrom Boolean @default(false) // renders "From $30"
-  priceNote   String  @default("/month")
-  ctaLabel    String  @default("Customize") // "Customize Basic" | "Build Your Premium System"
-  addOnHint   String? // sentence under the card about growing the plan
+  price            Decimal @default(10) @db.Decimal(12, 2)
+  priceNote        String  @default("/month")
+  includedSections Int     @default(6)
+  monthlyUpdates   Int     @default(1)
 
-  // Core system: does this plan pick booking / store, and may it have both?
-  coreSystemMode   String   @default("none") // none | choose-one | one-included-both-available
-  bothSystemsPrice Decimal? @db.Decimal(12, 2) // cost to add the 2nd core system
+  active Boolean @default(true)
 
-  // Included allowances (null = not available on this plan)
-  includedSections  Int?
-  includedUpdates   Int  @default(0)
-  includedProducts  Int?
-  includedServices  Int?
-  includedStaff     Int?
-  includedLocations Int  @default(1)
-
-  popular Boolean @default(false)
-  order   Int     @default(0)
-  active  Boolean @default(true)
-
-  inclusions PlanInclusion[]
-
-  @@index([active, order])
+  inclusions BaseInclusion[]
 }
 
-// The bullet list on a plan card. coreSystem scopes a bullet to one variant so
-// a Standard Store customer never sees "Up to 3 bookable staff".
-model PlanInclusion {
-  id         String  @id @default(cuid())
-  planId     String
-  label      String
-  coreSystem String? // null = always shown | booking | store
-  order      Int     @default(0)
-  active     Boolean @default(true)
-
-  plan PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-
-  @@index([planId, order])
-}
-
-model AddOnCategory {
+model BaseInclusion {
   id     String  @id @default(cuid())
-  key    String  @unique
-  name   String
-  blurb  String?
-  icon   String?
+  baseId String
+  label  String
   order  Int     @default(0)
   active Boolean @default(true)
 
-  addOns AddOn[]
+  base BaseWebsite @relation(fields: [baseId], references: [id], onDelete: Cascade)
+
+  @@index([baseId, order])
 }
 
-model AddOn {
-  id         String   @id @default(cuid())
-  key        String   @unique
-  categoryId String
-  name       String
-  blurb      String
-  bestFor    String?
-  icon       String?
-  includes   String[] // bullet list on the feature card
+// A core system the customer adds ON TOP of the base website. Booking and
+// E-commerce are each priced in their own right, so choosing both costs exactly
+// the sum of the two - there is no combined price to keep in step.
+model CoreSystem {
+  id          String @id @default(cuid())
+  key         String @unique // booking | store
+  name        String // "Booking System"
+  shortName   String // "Booking"
+  heading     String // "Take bookings online"
+  description String
+  ctaLabel    String @default("Add this system")
 
-  // How this is charged.
-  pricingType String   @default("monthly") // monthly | onetime | quote | external | bundled
-  price       Decimal? @db.Decimal(12, 2) // null when quote/external/bundled
-  priceIsFrom Boolean  @default(true)
-  priceLabel  String? // overrides the rendered price when set
+  price Decimal @default(10) @db.Decimal(12, 2)
+  icon  String?
 
-  // Eligibility. minPlan is the lowest plan that may select this add-on;
-  // includedInPlans lists plans where it is ALREADY included (never charged).
-  minPlan         String   @default("standard") // basic | standard | premium
-  includedInPlans String[] @default([])
-  bundledWith     String? // add-on key this ships inside of (pricingType "bundled")
+  order  Int     @default(0)
+  active Boolean @default(true)
+
+  inclusions SystemInclusion[]
+  limits     SystemLimit[]
+}
+
+// What a core system includes. These are the essentials that must never be
+// stripped out and sold back as a pack.
+model SystemInclusion {
+  id       String  @id @default(cuid())
+  systemId String
+  label    String
+  group    String? // optional sub-heading, e.g. "Order management"
+  order    Int     @default(0)
+  active   Boolean @default(true)
+
+  system CoreSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([systemId, order])
+}
+
+// A countable allowance of a core system. `upgradedValue` is what the limit
+// becomes when the customer adds the pack flagged `raisesLimits`, so one pack
+// lifts every limit at once instead of charging per dimension.
+model SystemLimit {
+  id            String  @id @default(cuid())
+  systemId      String
+  key           String // services | staff | products
+  label         String // "Active services"
+  unitLabel     String // "services"
+  baseValue     Int
+  upgradedValue Int
+  helpText      String?
+
+  order  Int     @default(0)
+  active Boolean @default(true)
+
+  system CoreSystem @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@unique([systemId, key])
+  @@index([systemId, order])
+}
+
+// A flat-priced bundle of related capability. Packs exist so related tools are
+// never sold as separate overlapping line items.
+model FeaturePack {
+  id          String @id @default(cuid())
+  key         String @unique
+  name        String
+  blurb       String // one sentence, shown on the card
+  description String // full explanation, shown when expanded
+
+  price Decimal @default(5) @db.Decimal(12, 2)
+  icon  String?
+
+  // Eligibility. A pack always needs at least one core system; `requiresSystems`
+  // names the systems it CANNOT work without (e.g. Inventory needs store).
+  requiresSystems   String[] @default([])
+  compatibleSystems String[] @default([]) // empty = every system
+  requiresReason    String? // "...because it manages product orders and deliveries."
+
+  // The pack that lifts every SystemLimit to its upgradedValue.
+  raisesLimits Boolean @default(false)
 
   recommendedFor String[] @default([]) // BusinessType keys
-  popular        Boolean  @default(false)
   order          Int      @default(0)
   active         Boolean  @default(true)
 
-  category     AddOnCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  dependencies AddOnDependency[]
-
-  @@index([categoryId, order])
-  @@index([active])
+  features PackFeature[]
 }
 
-// "Loyalty requires Customer Accounts", "Delivery requires Store or Ordering".
-model AddOnDependency {
-  id           String  @id @default(cuid())
-  addOnId      String
-  requiresType String  @default("addon") // addon | coreSystem
-  requiresKey  String // AddOn.key, or "booking" | "store" | "booking|store"
-  note         String? // shown when auto-adding the dependency
+model PackFeature {
+  id     String  @id @default(cuid())
+  packId String
+  label  String
+  group  String?
+  order  Int     @default(0)
+  active Boolean @default(true)
 
-  addOn AddOn @relation(fields: [addOnId], references: [id], onDelete: Cascade)
+  pack FeaturePack @relation(fields: [packId], references: [id], onDelete: Cascade)
 
-  @@index([addOnId])
+  @@index([packId, order])
 }
 
-// Buyable capacity above a plan's included allowance. Repeatable: the customer
-// may add the same step several times (50 -> 100 -> 150 products).
-model CapacityUpgrade {
-  id                 String   @id @default(cuid())
-  key                String   @unique // products | services | staff | updates | locations
-  name               String
-  unitLabel          String // "products"
-  stepSize           Int // 50
-  pricePerStep       Decimal  @db.Decimal(12, 2)
-  maxSteps           Int? // null = unlimited
-  appliesToPlans     String[] @default([])
-  requiresCoreSystem String? // booking | store | null
-  helpText           String?
-  order              Int      @default(0)
-  active             Boolean  @default(true)
+// Setup, design and data work. Charged once, never part of the monthly total.
+model OneTimeService {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  name          String
+  description   String?
+  category      String   @default("setup") // website | content | data | custom
+  startingPrice Decimal? @db.Decimal(12, 2) // null when quotation-only
+  isQuote       Boolean  @default(false) // true = "Requires quotation", never a price
+  order         Int      @default(0)
+  active        Boolean  @default(true)
 }
 
-// Rows of the plan comparison table. Free text per column so a cell can say
-// "Choose one" or "Up to 30 with booking" rather than a misleading checkmark.
+// Paid to somebody else. Shown so the customer can see it, never added to any
+// IGNIS total.
+model ExternalCost {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  name        String
+  description String?
+  provider    String?
+  costType    String  @default("usage") // fixed | estimated | usage
+  order       Int     @default(0)
+  active      Boolean @default(true)
+}
+
+// Rows of the starting-website comparison. Free text per column so a cell can
+// say "Requires E-commerce" or "Display only" rather than a misleading tick.
 model ComparisonRow {
-  id       String  @id @default(cuid())
-  label    String
-  basic    String
-  standard String
-  premium  String
-  note     String? // tooltip
-  order    Int     @default(0)
-  active   Boolean @default(true)
+  label         String
+  id            String  @id @default(cuid())
+  informational String
+  booking       String
+  store         String
+  both          String
+  note          String?
+  order         Int     @default(0)
+  active        Boolean @default(true)
+}
+
+// A worked example ("Salon website - $35/month"). Labelled as an example, never
+// as a plan, and its total is DERIVED from the systems and packs it names.
+model RecommendedSetup {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  systemKeys  String[] @default([])
+  packKeys    String[] @default([])
+  icon        String?
+  order       Int      @default(0)
+  active      Boolean  @default(true)
 }
 
 model PricingFaq {
@@ -837,10 +883,10 @@ model PricingFaq {
   active   Boolean @default(true)
 }
 
-// Pricing terms (section 23) and the glossary tooltips (section 13).
+// Pricing terms and the glossary tooltips.
 model PricingTerm {
   id     String  @id @default(cuid())
-  kind   String  @default("term") // term | glossary | external
+  kind   String  @default("term") // term | glossary
   title  String? // glossary word, e.g. "Small update"
   body   String
   order  Int     @default(0)
@@ -849,15 +895,23 @@ model PricingTerm {
   @@index([kind, order])
 }
 
+// Editable copy: page headings, the maximum-price wording, the WhatsApp
+// template. Keyed so the apps ask for a key and never hold the sentence.
+model PricingContent {
+  id     String  @id @default(cuid())
+  key    String  @unique // pricing.heading | builder.maxNote | whatsapp.template
+  label  String // what this is, for the admin screen
+  value  String
+  active Boolean @default(true)
+}
+
 model BusinessType {
   id                 String   @id @default(cuid())
   key                String   @unique
   name               String
   icon               String?
-  recommendedPlan    String   @default("standard")
-  recommendedCore    String? // booking | store
-  priorityCategories String[] @default([])
-  priorityAddOns     String[] @default([])
+  recommendedSystems String[] @default([])
+  priorityPacks      String[] @default([])
   order              Int      @default(0)
   active             Boolean  @default(true)
 }
@@ -876,10 +930,18 @@ model PlanConfiguration {
   businessType String?
   notes        String?
 
-  planKey        String
-  coreSystem     String? // booking | store | both
-  capacities     Json? // { products: 100, services: 30, ... }
-  selectedAddOns Json? // [{ key, name, pricingType, price, includedInPlan }]
+  // What the customer chose. systemKeys/packKeys are the live model; planKey and
+  // coreSystem are kept nullable so configurations submitted under the old
+  // plan model stay readable exactly as they were sent.
+  systemKeys   String[] @default([]) // booking | store
+  packKeys     String[] @default([])
+  oneTimeKeys  String[] @default([])
+  externalKeys String[] @default([])
+
+  planKey        String?
+  coreSystem     String?
+  capacities     Json?
+  selectedAddOns Json? // [{ key, name, price }] — snapshot of the packs/systems charged
   quoteItems     Json? // [{ key, name }]
 
   monthlyTotal Decimal @default(0) @db.Decimal(12, 2)

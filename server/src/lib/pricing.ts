@@ -1,94 +1,102 @@
 // ---------------------------------------------------------------------------
-// Pricing engine — the single source of truth for every price the customer sees.
+// Pricing engine — the single source of truth for every price a customer sees.
 //
-// Plan cards, the comparison table, the feature catalogue, the Plan Builder,
-// the WhatsApp message and the final request summary all resolve through
-// `quote()`. That is what makes them structurally unable to contradict each
-// other: there is only one place that decides what is included, what is
-// charged, and what still needs a quotation.
+// The model is deliberately ADDITIVE:
+//
+//     monthly total = base website + chosen core systems + chosen feature packs
+//
+// Every customer starts on the same base website. Booking and E-commerce are
+// priced in their own right, so choosing both costs exactly the sum of the two
+// — there is no combined price that could drift out of step, and adding the
+// second system later costs exactly what it costs on its own.
+//
+// Feature packs are flat-priced bundles. Related capability lives in ONE pack,
+// so nothing overlaps and nothing is charged twice: the same pack cannot be
+// added twice, and a pack is never sold to a customer whose systems can't run
+// it. One-time services and external provider costs are reported separately and
+// are NEVER part of the monthly total.
 //
 // Nothing here is stored. A quote is DERIVED from the catalogue plus the
 // customer's selection, exactly like calc.ts derives balances and statuses.
-// (A submitted PlanConfiguration snapshots its breakdown so a later price
-// change never rewrites what the customer was actually shown.)
+// (A submitted configuration snapshots its breakdown so a later price change
+// never rewrites what the customer was actually shown.)
 //
-// This module is intentionally free of Prisma and Express imports so the same
-// logic can be mirrored into the public web app and produce identical numbers.
+// This module is intentionally free of Prisma and Express imports so the public
+// web app can run the very same code and get identical numbers.
 // ---------------------------------------------------------------------------
 
-export type PlanKey = string; // basic | standard | premium (data-driven)
-export type CoreSystem = "booking" | "store" | "both";
-export type PricingType = "monthly" | "onetime" | "quote" | "external" | "bundled";
+export type SystemKey = string; // "booking" | "store" (data-driven)
 
-/** Plan ranking is data-driven: order in the catalogue defines "higher". */
-export interface PricingPlanDef {
-  key: PlanKey;
-  name: string;
-  basePrice: number;
-  priceIsFrom: boolean;
-  coreSystemMode: "none" | "choose-one" | "one-included-both-available";
-  bothSystemsPrice: number | null;
-  includedSections: number | null;
-  includedUpdates: number;
-  includedProducts: number | null;
-  includedServices: number | null;
-  includedStaff: number | null;
-  includedLocations: number;
-  order: number;
-}
-
-export interface AddOnDef {
+export interface BaseWebsiteDef {
   key: string;
   name: string;
-  categoryKey: string;
-  pricingType: PricingType;
-  price: number | null;
-  priceIsFrom: boolean;
-  priceLabel: string | null;
-  minPlan: PlanKey;
-  includedInPlans: PlanKey[];
-  bundledWith: string | null;
-  dependencies: DependencyDef[];
+  price: number;
+  includedSections: number;
+  monthlyUpdates: number;
 }
 
-export interface DependencyDef {
-  requiresType: "addon" | "coreSystem";
-  /** AddOn key, or a core system: "booking" | "store" | "booking|store" */
-  requiresKey: string;
-  note: string | null;
-}
-
-export interface CapacityDef {
-  key: string; // products | services | staff | updates | locations
-  name: string;
+export interface SystemLimitDef {
+  key: string; // services | staff | products
+  label: string;
   unitLabel: string;
-  stepSize: number;
-  pricePerStep: number;
-  maxSteps: number | null;
-  appliesToPlans: PlanKey[];
-  requiresCoreSystem: string | null;
+  baseValue: number;
+  upgradedValue: number;
+}
+
+export interface CoreSystemDef {
+  key: SystemKey;
+  name: string;
+  shortName: string;
+  price: number;
   order: number;
+  limits: SystemLimitDef[];
+}
+
+export interface FeaturePackDef {
+  key: string;
+  name: string;
+  price: number;
+  /** Systems this pack cannot work without. Empty = any system will do. */
+  requiresSystems: SystemKey[];
+  /** Systems it may be combined with. Empty = all of them. */
+  compatibleSystems: SystemKey[];
+  /** Why the requirement exists, in the customer's language. */
+  requiresReason: string | null;
+  /** The pack that lifts every system limit to its upgraded value. */
+  raisesLimits: boolean;
+  order: number;
+}
+
+export interface OneTimeServiceDef {
+  key: string;
+  name: string;
+  startingPrice: number | null;
+  isQuote: boolean;
+}
+
+export interface ExternalCostDef {
+  key: string;
+  name: string;
+  provider: string | null;
+  costType: string;
 }
 
 export interface Catalogue {
-  plans: PricingPlanDef[];
-  addOns: AddOnDef[];
-  capacity: CapacityDef[];
+  base: BaseWebsiteDef;
+  systems: CoreSystemDef[];
+  packs: FeaturePackDef[];
+  oneTime: OneTimeServiceDef[];
+  external: ExternalCostDef[];
 }
 
 export interface Selection {
-  planKey: PlanKey;
-  coreSystem?: CoreSystem | null;
-  /** Desired TOTAL for each dimension (not the delta). e.g. { products: 100 } */
-  capacities?: Record<string, number>;
-  addOnKeys?: string[];
+  systemKeys?: SystemKey[];
+  packKeys?: string[];
+  oneTimeKeys?: string[];
+  externalKeys?: string[];
 }
 
-export type LineKind =
-  | "plan"
-  | "coreSystem"
-  | "capacity"
-  | "addon";
+export type LineKind = "base" | "system" | "pack";
 
 export interface LineItem {
   kind: LineKind;
@@ -96,48 +104,48 @@ export interface LineItem {
   label: string;
   detail?: string;
   amount: number;
-  /** true when covered by the plan and shown as "Included" rather than $0. */
-  included: boolean;
-  isFrom: boolean;
-  quantity?: number;
 }
 
-export interface PlanUpgrade {
-  from: PlanKey;
-  to: PlanKey;
-  /** Add-on names that forced the upgrade — the customer must see the reason. */
-  triggeredBy: string[];
-  message: string;
-}
-
-export interface AutoAdded {
+export interface OneTimeLine {
   key: string;
-  name: string;
-  requiredBy: string;
-  message: string;
+  label: string;
+  /** null when the work has to be quoted — never invent a number. */
+  amount: number | null;
+  isQuote: boolean;
 }
 
-export interface Recommendation {
-  switchTo: PlanKey;
-  direction: "up" | "down";
-  /**
-   * saves   — the other plan genuinely costs less for this exact configuration
-   * same    — identical price, but more headroom
-   * unlocks — costs a little MORE; offered as an honest upsell, never as a saving
-   */
-  kind: "saves" | "same" | "unlocks";
-  message: string;
-  /** Positive = money saved per month by switching. Negative for "unlocks". */
-  saving: number;
-  /** Signed difference: alternative total − current total. */
-  difference: number;
+export interface ExternalLine {
+  key: string;
+  label: string;
+  provider: string | null;
+  costType: string;
+}
+
+/** A limit the customer's configuration actually gives them. */
+export interface ResolvedLimit {
+  systemKey: SystemKey;
+  key: string;
+  label: string;
+  unitLabel: string;
+  value: number;
+  baseValue: number;
+  /** true when a pack lifted it above the system's standard allowance. */
+  upgraded: boolean;
 }
 
 /**
- * How much more per month a higher plan may cost and still be worth surfacing.
- * Above this we stay quiet rather than pushing a customer upward.
+ * A pack the customer asked for that their systems can't run, together with
+ * the exact thing that would fix it. Never just an error: the customer is told
+ * what to add and what it costs, and may decline.
  */
-export const UPGRADE_NUDGE_LIMIT = 5;
+export interface UnmetRequirement {
+  packKey: string;
+  packName: string;
+  /** Systems that would satisfy it — any ONE of them is enough. */
+  addSystems: { key: SystemKey; name: string; price: number }[];
+  message: string;
+  blocking: boolean;
+}
 
 export interface ValidationIssue {
   code: string;
@@ -146,409 +154,214 @@ export interface ValidationIssue {
 }
 
 export interface Quote {
-  requestedPlanKey: PlanKey;
-  planKey: PlanKey;
-  coreSystem: CoreSystem | null;
-  upgrades: PlanUpgrade[];
-  autoAdded: AutoAdded[];
-  /** Charged every month. */
+  systemKeys: SystemKey[];
+  packKeys: string[];
+
+  /** Charged every month. Base first, then systems, then packs. */
   monthly: LineItem[];
-  /** Charged once, at setup. */
-  oneTime: LineItem[];
-  /** Paid to other companies — never part of a total. */
-  external: LineItem[];
-  /** No automatic price is possible — never part of a total. */
-  quoteItems: LineItem[];
-  /** Covered by the plan. Shown as "Included", never as a $0 charge. */
-  included: LineItem[];
   monthlyTotal: number;
+
+  /** Charged once. Never part of monthlyTotal. */
+  oneTime: OneTimeLine[];
   oneTimeTotal: number;
-  recommendation: Recommendation | null;
+  /** true when some one-time work has no price yet. */
+  oneTimeNeedsQuote: boolean;
+
+  /** Paid to other providers. Never part of any IGNIS total. */
+  external: ExternalLine[];
+
+  limits: ResolvedLimit[];
+  unmet: UnmetRequirement[];
   issues: ValidationIssue[];
+
+  /** Base + every system + every pack: the ceiling this catalogue can produce. */
+  maxStandardMonthly: number;
 }
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
-function planRank(cat: Catalogue, key: PlanKey): number {
-  const p = cat.plans.find((x) => x.key === key);
-  return p ? p.order : -1;
+/** Base + all systems + all packs. The advertised maximum, derived not asserted. */
+export function maxStandardMonthly(cat: Catalogue): number {
+  return money(
+    cat.base.price +
+      cat.systems.reduce((s, x) => s + x.price, 0) +
+      cat.packs.reduce((s, p) => s + p.price, 0)
+  );
 }
 
-function planOf(cat: Catalogue, key: PlanKey): PricingPlanDef | undefined {
-  return cat.plans.find((x) => x.key === key);
-}
-
-/** Does `have` satisfy a minimum-plan requirement of `need`? */
-function meetsPlan(cat: Catalogue, have: PlanKey, need: PlanKey): boolean {
-  return planRank(cat, have) >= planRank(cat, need);
-}
-
-function coreSatisfies(selected: CoreSystem | null, requiresKey: string): boolean {
-  if (!selected) return false;
-  if (selected === "both") return true;
-  return requiresKey.split("|").includes(selected);
+/** Can this pack run on exactly these systems? */
+export function packIsAvailable(pack: FeaturePackDef, systemKeys: SystemKey[]): boolean {
+  // Every pack needs at least one core system: there is nothing for it to
+  // extend on an informational-only website.
+  if (systemKeys.length === 0) return false;
+  if (pack.requiresSystems.length && !pack.requiresSystems.some((k) => systemKeys.includes(k))) {
+    return false;
+  }
+  if (pack.compatibleSystems.length && !systemKeys.some((k) => pack.compatibleSystems.includes(k))) {
+    return false;
+  }
+  return true;
 }
 
 /**
- * Resolve a selection into a full quote.
+ * Packs that would stop working if `systemKey` were removed. The builder asks
+ * for confirmation with this list rather than silently dropping them.
+ */
+export function packsLostWithout(
+  cat: Catalogue,
+  systemKeys: SystemKey[],
+  systemKey: SystemKey,
+  selectedPackKeys: string[]
+): FeaturePackDef[] {
+  const remaining = systemKeys.filter((k) => k !== systemKey);
+  return cat.packs.filter(
+    (p) => selectedPackKeys.includes(p.key) && !packIsAvailable(p, remaining)
+  );
+}
+
+/**
+ * Resolve a selection into a quote.
  *
- * Order matters:
- *   1. expand dependencies (may pull in more add-ons, recursively)
- *   2. escalate the plan if any selected add-on requires a higher one
- *   3. re-check inclusions against the FINAL plan, so a Premium customer is
- *      never charged for something Premium already includes
- *   4. price capacity above the final plan's allowances
+ * Duplicates are removed before anything is priced, so the same system or pack
+ * can never be charged twice however it arrives.
  */
 export function quote(cat: Catalogue, sel: Selection): Quote {
-  return quoteWith(cat, sel, true);
-}
-
-/**
- * `withRecommendation` is false when called from `recommend()` itself, which
- * prices the same selection against neighbouring plans to compare totals.
- * Without it the two would call each other forever.
- */
-function quoteWith(cat: Catalogue, sel: Selection, withRecommendation: boolean): Quote {
   const issues: ValidationIssue[] = [];
-  const requestedPlanKey = sel.planKey;
-  const byKey = new Map(cat.addOns.map((a) => [a.key, a]));
 
-  // --- 1. expand dependencies -------------------------------------------------
-  const chosen: string[] = [];
-  const autoAdded: AutoAdded[] = [];
-  const seen = new Set<string>();
+  const systemByKey = new Map(cat.systems.map((s) => [s.key, s]));
+  const packByKey = new Map(cat.packs.map((p) => [p.key, p]));
 
-  const add = (key: string, requiredBy?: string) => {
-    if (seen.has(key)) return;
-    const a = byKey.get(key);
-    if (!a) {
-      issues.push({
-        code: "unknown-addon",
-        message: `"${key}" is no longer available.`,
-        blocking: false,
-      });
-      return;
+  // --- 1. systems -------------------------------------------------------------
+  const systemKeys: SystemKey[] = [];
+  for (const key of sel.systemKeys ?? []) {
+    if (systemKeys.includes(key)) continue; // never charge the same system twice
+    if (!systemByKey.has(key)) {
+      issues.push({ code: "unknown-system", message: `"${key}" is no longer available.`, blocking: false });
+      continue;
     }
-    seen.add(key);
-    chosen.push(key);
-    if (requiredBy) {
-      autoAdded.push({
-        key,
-        name: a.name,
-        requiredBy,
-        message: `${requiredBy} requires ${a.name}. ${a.name} has been added to your plan.`,
-      });
-    }
-    for (const d of a.dependencies) {
-      if (d.requiresType === "addon") add(d.requiresKey, a.name);
-    }
-  };
-
-  for (const k of sel.addOnKeys ?? []) add(k);
-
-  // A bundled add-on ships inside its parent — pull the parent in too.
-  for (const k of [...chosen]) {
-    const a = byKey.get(k);
-    if (a?.bundledWith) add(a.bundledWith, a.name);
+    systemKeys.push(key);
   }
+  systemKeys.sort((a, b) => (systemByKey.get(a)!.order ?? 0) - (systemByKey.get(b)!.order ?? 0));
 
-  // --- 2. escalate the plan ---------------------------------------------------
-  let planKey = requestedPlanKey;
-  const upgrades: PlanUpgrade[] = [];
-  const forcing = chosen
-    .map((k) => byKey.get(k)!)
-    .filter((a) => !meetsPlan(cat, planKey, a.minPlan));
+  // --- 2. packs ---------------------------------------------------------------
+  const packKeys: string[] = [];
+  const unmet: UnmetRequirement[] = [];
 
-  if (forcing.length) {
-    // Escalate to the highest minPlan any selected add-on demands.
-    const target = forcing.reduce(
-      (hi, a) => (planRank(cat, a.minPlan) > planRank(cat, hi) ? a.minPlan : hi),
-      planKey
-    );
-    const names = forcing.map((a) => a.name);
-    upgrades.push({
-      from: planKey,
-      to: target,
-      triggeredBy: names,
-      message: `${names.join(", ")} ${
-        names.length > 1 ? "require" : "requires"
-      } ${planOf(cat, target)?.name ?? target} because ${
-        names.length > 1 ? "they use" : "it uses"
-      } advanced business management tools. Your plan has been upgraded to ${
-        planOf(cat, target)?.name ?? target
-      }.`,
-    });
-    planKey = target;
-  }
-
-  const plan = planOf(cat, planKey);
-  if (!plan) {
-    return {
-      requestedPlanKey,
-      planKey,
-      coreSystem: sel.coreSystem ?? null,
-      upgrades,
-      autoAdded,
-      monthly: [],
-      oneTime: [],
-      external: [],
-      quoteItems: [],
-      included: [],
-      monthlyTotal: 0,
-      oneTimeTotal: 0,
-      recommendation: null,
-      issues: [
-        { code: "no-plan", message: "Select a plan to continue.", blocking: true },
-      ],
-    };
-  }
-
-  // --- core system ------------------------------------------------------------
-  let coreSystem = sel.coreSystem ?? null;
-  if (plan.coreSystemMode === "none") {
-    coreSystem = null;
-  } else if (!coreSystem) {
-    issues.push({
-      code: "core-required",
-      message: `Choose whether you need bookings or an online store with ${plan.name}.`,
-      blocking: true,
-    });
-  } else if (coreSystem === "both" && plan.coreSystemMode === "choose-one") {
-    issues.push({
-      code: "core-both-unavailable",
-      message: `${plan.name} includes one core system. Both are available with Premium.`,
-      blocking: true,
-    });
-  }
-
-  const monthly: LineItem[] = [];
-  const oneTime: LineItem[] = [];
-  const external: LineItem[] = [];
-  const quoteItems: LineItem[] = [];
-  const included: LineItem[] = [];
-
-  monthly.push({
-    kind: "plan",
-    key: plan.key,
-    label: `${plan.name} Plan`,
-    detail: coreSystem ? coreLabel(coreSystem) : undefined,
-    amount: money(plan.basePrice),
-    included: false,
-    isFrom: plan.priceIsFrom,
-  });
-
-  if (coreSystem === "both" && plan.bothSystemsPrice != null) {
-    monthly.push({
-      kind: "coreSystem",
-      key: "second-core-system",
-      label: "Second core system (booking and store)",
-      amount: money(plan.bothSystemsPrice),
-      included: false,
-      isFrom: true,
-    });
-  }
-
-  // --- 3. price the add-ons against the FINAL plan ----------------------------
-  for (const key of chosen) {
-    const a = byKey.get(key)!;
-
-    // Dependencies on a core system can only be checked now.
-    for (const d of a.dependencies) {
-      if (d.requiresType === "coreSystem" && !coreSatisfies(coreSystem, d.requiresKey)) {
-        issues.push({
-          code: "missing-core",
-          message:
-            d.note ??
-            `${a.name} needs ${requiresLabel(d.requiresKey)}. Choose one to continue.`,
-          blocking: true,
-        });
-      }
-    }
-
-    const isIncluded = a.includedInPlans.includes(planKey);
-    const isBundled = a.pricingType === "bundled";
-
-    if (isIncluded || isBundled) {
-      included.push({
-        kind: "addon",
-        key: a.key,
-        label: a.name,
-        detail: isBundled
-          ? `Included with ${byKey.get(a.bundledWith ?? "")?.name ?? "your plan"}`
-          : `Included with ${plan.name}`,
-        amount: 0,
-        included: true,
-        isFrom: false,
-      });
+  for (const key of sel.packKeys ?? []) {
+    if (packKeys.includes(key)) continue; // never charge the same pack twice
+    const pack = packByKey.get(key);
+    if (!pack) {
+      issues.push({ code: "unknown-pack", message: `"${key}" is no longer available.`, blocking: false });
       continue;
     }
 
-    const line: LineItem = {
-      kind: "addon",
-      key: a.key,
-      label: a.name,
-      detail: a.priceLabel ?? undefined,
-      amount: money(a.price ?? 0),
-      included: false,
-      isFrom: a.priceIsFrom,
-    };
-
-    if (a.pricingType === "monthly") monthly.push(line);
-    else if (a.pricingType === "onetime") oneTime.push(line);
-    else if (a.pricingType === "external") external.push({ ...line, amount: 0 });
-    else quoteItems.push({ ...line, amount: 0 });
-  }
-
-  // --- 4. capacity above the plan's allowance ---------------------------------
-  const allowance: Record<string, number | null> = {
-    products: plan.includedProducts,
-    services: plan.includedServices,
-    staff: plan.includedStaff,
-    updates: plan.includedUpdates,
-    locations: plan.includedLocations,
-    sections: plan.includedSections,
-  };
-
-  for (const cap of [...cat.capacity].sort((a, b) => a.order - b.order)) {
-    const desired = sel.capacities?.[cap.key];
-    if (desired == null) continue;
-    if (cap.appliesToPlans.length && !cap.appliesToPlans.includes(planKey)) continue;
-    if (cap.requiresCoreSystem && !coreSatisfies(coreSystem, cap.requiresCoreSystem)) continue;
-
-    const base = allowance[cap.key];
-    if (base == null) continue; // dimension not available on this plan
-    const extra = desired - base;
-    if (extra <= 0) continue;
-
-    let steps = Math.ceil(extra / cap.stepSize);
-    if (cap.maxSteps != null && steps > cap.maxSteps) {
-      steps = cap.maxSteps;
-      issues.push({
-        code: "capacity-max",
-        message: `${cap.name} above ${base + cap.maxSteps * cap.stepSize} ${cap.unitLabel} needs a custom quotation.`,
-        blocking: false,
-      });
+    if (packIsAvailable(pack, systemKeys)) {
+      packKeys.push(key);
+      continue;
     }
 
-    monthly.push({
-      kind: "capacity",
-      key: cap.key,
-      label: `Additional ${steps * cap.stepSize} ${cap.unitLabel}`,
-      detail: `${base} included · ${base + steps * cap.stepSize} total`,
-      amount: money(steps * cap.pricePerStep),
-      included: false,
-      isFrom: false,
-      quantity: steps,
+    // Not available — say what would make it work, and what that costs.
+    const needed = (pack.requiresSystems.length ? pack.requiresSystems : cat.systems.map((s) => s.key))
+      .filter((k) => !systemKeys.includes(k))
+      .map((k) => systemByKey.get(k))
+      .filter((s): s is CoreSystemDef => Boolean(s))
+      .map((s) => ({ key: s.key, name: s.name, price: money(s.price) }));
+
+    unmet.push({
+      packKey: pack.key,
+      packName: pack.name,
+      addSystems: needed,
+      message:
+        pack.requiresReason ??
+        `${pack.name} needs ${needed.map((n) => n.name).join(" or ")} to work.`,
+      blocking: true,
     });
   }
 
+  packKeys.sort((a, b) => (packByKey.get(a)!.order ?? 0) - (packByKey.get(b)!.order ?? 0));
+
+  // --- 3. monthly lines -------------------------------------------------------
+  const monthly: LineItem[] = [
+    { kind: "base", key: cat.base.key, label: cat.base.name, amount: money(cat.base.price) },
+  ];
+
+  for (const key of systemKeys) {
+    const s = systemByKey.get(key)!;
+    monthly.push({ kind: "system", key: s.key, label: s.name, amount: money(s.price) });
+  }
+  for (const key of packKeys) {
+    const p = packByKey.get(key)!;
+    monthly.push({ kind: "pack", key: p.key, label: p.name, amount: money(p.price) });
+  }
+
   const monthlyTotal = money(monthly.reduce((s, l) => s + l.amount, 0));
-  const oneTimeTotal = money(oneTime.reduce((s, l) => s + l.amount, 0));
+
+  // --- 4. limits --------------------------------------------------------------
+  const raises = packKeys.some((k) => packByKey.get(k)!.raisesLimits);
+  const limits: ResolvedLimit[] = [];
+  for (const key of systemKeys) {
+    const s = systemByKey.get(key)!;
+    for (const l of s.limits) {
+      limits.push({
+        systemKey: s.key,
+        key: l.key,
+        label: l.label,
+        unitLabel: l.unitLabel,
+        value: raises ? l.upgradedValue : l.baseValue,
+        baseValue: l.baseValue,
+        upgraded: raises && l.upgradedValue > l.baseValue,
+      });
+    }
+  }
+
+  // --- 5. one-time work and external costs ------------------------------------
+  const oneTimeByKey = new Map(cat.oneTime.map((o) => [o.key, o]));
+  const oneTime: OneTimeLine[] = [];
+  for (const key of new Set(sel.oneTimeKeys ?? [])) {
+    const o = oneTimeByKey.get(key);
+    if (!o) continue;
+    oneTime.push({
+      key: o.key,
+      label: o.name,
+      // Quotation work never gets an invented number.
+      amount: o.isQuote ? null : o.startingPrice ?? null,
+      isQuote: o.isQuote || o.startingPrice == null,
+    });
+  }
+  const oneTimeTotal = money(oneTime.reduce((s, l) => s + (l.amount ?? 0), 0));
+
+  const externalByKey = new Map(cat.external.map((e) => [e.key, e]));
+  const external: ExternalLine[] = [];
+  for (const key of new Set(sel.externalKeys ?? [])) {
+    const e = externalByKey.get(key);
+    if (!e) continue;
+    external.push({ key: e.key, label: e.name, provider: e.provider, costType: e.costType });
+  }
+
+  // --- 6. sanity --------------------------------------------------------------
+  const max = maxStandardMonthly(cat);
+  if (monthlyTotal > max) {
+    // Only reachable if the catalogue itself is inconsistent; say so rather
+    // than quietly showing a total above the advertised ceiling.
+    issues.push({
+      code: "above-maximum",
+      message: `This total is above the standard maximum of $${max}/month. Please contact us.`,
+      blocking: false,
+    });
+  }
 
   return {
-    requestedPlanKey,
-    planKey,
-    coreSystem,
-    upgrades,
-    autoAdded,
+    systemKeys,
+    packKeys,
     monthly,
-    oneTime,
-    external,
-    quoteItems,
-    included,
     monthlyTotal,
+    oneTime,
     oneTimeTotal,
-    recommendation: withRecommendation
-      ? recommend(cat, sel, planKey, monthlyTotal)
-      : null,
+    oneTimeNeedsQuote: oneTime.some((l) => l.isQuote),
+    external,
+    limits,
+    unmet,
     issues,
+    maxStandardMonthly: max,
   };
 }
-
-function coreLabel(c: CoreSystem): string {
-  return c === "booking"
-    ? "Booking system"
-    : c === "store"
-    ? "Online store / ordering"
-    : "Booking and store";
-}
-
-function requiresLabel(key: string): string {
-  const parts = key.split("|").map((k) => (k === "booking" ? "a booking system" : "an online store or ordering system"));
-  return parts.join(" or ");
-}
-
-/**
- * Would a different plan serve this configuration better?
- *
- * Upward: the next plan up already includes enough of what they're paying for
- * that it costs the same or less. Downward: nothing they selected needs the
- * plan they're on. Never applied automatically — the customer decides.
- */
-function recommend(
-  cat: Catalogue,
-  sel: Selection,
-  currentPlan: PlanKey,
-  currentTotal: number
-): Recommendation | null {
-  const ordered = [...cat.plans].sort((a, b) => a.order - b.order);
-  const idx = ordered.findIndex((p) => p.key === currentPlan);
-  if (idx === -1) return null;
-
-  const priced = (planKey: PlanKey) => {
-    const q = quoteWith(cat, { ...sel, planKey }, false);
-    // Only comparable if the alternative doesn't get escalated straight back,
-    // and if it can actually satisfy the configuration.
-    if (q.planKey !== planKey) return null;
-    if (q.issues.some((i) => i.blocking)) return null;
-    // A plan with no core system drops the customer's booking or store choice
-    // silently and so looks cheaper than it is. Cheaper because it does less is
-    // not a saving, and must never be offered as one.
-    if ((sel.coreSystem ?? null) !== q.coreSystem) return null;
-    return q.monthlyTotal;
-  };
-
-  const up = ordered[idx + 1];
-  if (up) {
-    const upTotal = priced(up.key);
-    if (upTotal != null && upTotal <= currentTotal + UPGRADE_NUDGE_LIMIT) {
-      const difference = money(upTotal - currentTotal);
-      if (difference < 0) {
-        return {
-          switchTo: up.key, direction: "up", kind: "saves",
-          saving: -difference, difference,
-          message: `${up.name} may provide better value — several features you selected are already included, bringing your total to $${upTotal}/month.`,
-        };
-      }
-      if (difference === 0) {
-        return {
-          switchTo: up.key, direction: "up", kind: "same",
-          saving: 0, difference,
-          message: `${up.name} costs the same for this configuration and includes more as your business grows.`,
-        };
-      }
-      // Costs more. Say so plainly — never dress an upsell up as a saving.
-      return {
-        switchTo: up.key, direction: "up", kind: "unlocks",
-        saving: -difference, difference,
-        message: `For $${difference}/month more, ${up.name} covers this configuration and adds priority support, owner training and access to the advanced business modules.`,
-      };
-    }
-  }
-
-  const down = ordered[idx - 1];
-  if (down) {
-    const downTotal = priced(down.key);
-    if (downTotal != null && downTotal < currentTotal) {
-      const difference = money(downTotal - currentTotal);
-      return {
-        switchTo: down.key, direction: "down", kind: "saves",
-        saving: -difference, difference,
-        message: `Your current setup may also work with ${down.name} at $${downTotal}/month.`,
-      };
-    }
-  }
-
-  return null;
-}
-

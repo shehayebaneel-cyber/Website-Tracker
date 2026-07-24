@@ -5,65 +5,75 @@
 // ---------------------------------------------------------------------------
 
 import { prisma } from "./db.js";
-import type { Catalogue, AddOnDef, PricingPlanDef, CapacityDef } from "./pricing.js";
+import type { Catalogue } from "./pricing.js";
 
 const num = (d: unknown): number => (d == null ? 0 : Number(d));
 const numOrNull = (d: unknown): number | null => (d == null ? null : Number(d));
 
 export async function loadCatalogue(): Promise<Catalogue> {
-  const [plans, addOns, capacity] = await Promise.all([
-    prisma.pricingPlan.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
-    prisma.addOn.findMany({
+  const [base, systems, packs, oneTime, external] = await Promise.all([
+    prisma.baseWebsite.findFirst({ where: { active: true } }),
+    prisma.coreSystem.findMany({
       where: { active: true },
       orderBy: { order: "asc" },
-      include: { dependencies: true, category: true },
+      include: { limits: { where: { active: true }, orderBy: { order: "asc" } } },
     }),
-    prisma.capacityUpgrade.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.featurePack.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.oneTimeService.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
+    prisma.externalCost.findMany({ where: { active: true }, orderBy: { order: "asc" } }),
   ]);
 
   return {
-    plans: plans.map<PricingPlanDef>((p) => ({
-      key: p.key,
-      name: p.name,
-      basePrice: num(p.basePrice),
-      priceIsFrom: p.priceIsFrom,
-      coreSystemMode: p.coreSystemMode as PricingPlanDef["coreSystemMode"],
-      bothSystemsPrice: numOrNull(p.bothSystemsPrice),
-      includedSections: p.includedSections,
-      includedUpdates: p.includedUpdates,
-      includedProducts: p.includedProducts,
-      includedServices: p.includedServices,
-      includedStaff: p.includedStaff,
-      includedLocations: p.includedLocations,
-      order: p.order,
-    })),
-    addOns: addOns.map<AddOnDef>((a) => ({
-      key: a.key,
-      name: a.name,
-      categoryKey: a.category.key,
-      pricingType: a.pricingType as AddOnDef["pricingType"],
-      price: numOrNull(a.price),
-      priceIsFrom: a.priceIsFrom,
-      priceLabel: a.priceLabel,
-      minPlan: a.minPlan,
-      includedInPlans: a.includedInPlans,
-      bundledWith: a.bundledWith,
-      dependencies: a.dependencies.map((d) => ({
-        requiresType: d.requiresType as "addon" | "coreSystem",
-        requiresKey: d.requiresKey,
-        note: d.note,
+    // A catalogue with no base website cannot price anything. Callers check for
+    // that rather than treating a missing base as free.
+    base: base
+      ? {
+          key: base.key,
+          name: base.name,
+          price: num(base.price),
+          includedSections: base.includedSections,
+          monthlyUpdates: base.monthlyUpdates,
+        }
+      : { key: "base", name: "Base website", price: 0, includedSections: 0, monthlyUpdates: 0 },
+
+    systems: systems.map((s) => ({
+      key: s.key,
+      name: s.name,
+      shortName: s.shortName,
+      price: num(s.price),
+      order: s.order,
+      limits: s.limits.map((l) => ({
+        key: l.key,
+        label: l.label,
+        unitLabel: l.unitLabel,
+        baseValue: l.baseValue,
+        upgradedValue: l.upgradedValue,
       })),
     })),
-    capacity: capacity.map<CapacityDef>((c) => ({
-      key: c.key,
-      name: c.name,
-      unitLabel: c.unitLabel,
-      stepSize: c.stepSize,
-      pricePerStep: num(c.pricePerStep),
-      maxSteps: c.maxSteps,
-      appliesToPlans: c.appliesToPlans,
-      requiresCoreSystem: c.requiresCoreSystem,
-      order: c.order,
+
+    packs: packs.map((p) => ({
+      key: p.key,
+      name: p.name,
+      price: num(p.price),
+      requiresSystems: p.requiresSystems,
+      compatibleSystems: p.compatibleSystems,
+      requiresReason: p.requiresReason,
+      raisesLimits: p.raisesLimits,
+      order: p.order,
+    })),
+
+    oneTime: oneTime.map((o) => ({
+      key: o.key,
+      name: o.name,
+      startingPrice: numOrNull(o.startingPrice),
+      isQuote: o.isQuote,
+    })),
+
+    external: external.map((e) => ({
+      key: e.key,
+      name: e.name,
+      provider: e.provider,
+      costType: e.costType,
     })),
   };
 }

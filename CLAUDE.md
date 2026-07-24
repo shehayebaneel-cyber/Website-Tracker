@@ -10,10 +10,14 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
 ## Stack & layout
 - web/ (Vite + React + Tailwind v4 + React Router + Recharts) — port **5180**
 - server/ (Express + Prisma + PostgreSQL, JWT-cookie auth, Zod) — port **4020**
-- DB: **per-PC, set in `server/.env`.** This PC points at the **Neon `dev` branch**
-  (no local server to start). The other PC runs local **portable** PostgreSQL 17 on port
-  **5433** (`server/.pgdata`, NOT a Windows service — `scripts/pg-start.ps1` after reboot,
-  binaries `C:\Users\sheha\pgsql`, so that script only works there).
+- DB: **Neon Postgres, shared by both PCs** so the data stays in sync — set per-PC in
+  `server/.env` (gitignored). Local dev uses the **`dev` branch** (`ep-dry-snow-av0bvlxw`);
+  the production branch is Render's and local dev must never point at it. Nothing to start
+  before `npm run dev`. **Consequence: a migration or seed run on one PC is already applied
+  for the other — only the code has to travel, via git.**
+- `scripts/pg-start.ps1` is left over from the earlier local portable PostgreSQL 17 setup
+  (port 5433, `server/.pgdata`). Its binaries path is hardcoded to `C:\Users\sheha\pgsql`,
+  so it fails on the `arami` PC. Not needed while `.env` points at Neon.
 - Deploy: not yet deployed. Plan → Neon Postgres + Render (ask before first deploy).
 
 ## Commands

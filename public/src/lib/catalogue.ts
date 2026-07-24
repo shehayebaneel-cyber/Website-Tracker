@@ -144,7 +144,17 @@ export function useCatalogue() {
   useEffect(() => {
     let live = true;
     loadCatalogue()
-      .then((c) => live && setCatalogue(c))
+      .then((c) => {
+        if (!live) return;
+        // A reachable API with an empty catalogue is still nothing to price
+        // from — e.g. a database that has the tables but was never seeded.
+        // Say so, rather than rendering a pricing page with no prices in it.
+        if (!c.plans.length) {
+          setError("Our plans could not be loaded right now.");
+          return;
+        }
+        setCatalogue(c);
+      })
       .catch(() => live && setError("Our plans could not be loaded right now."));
     return () => {
       live = false;

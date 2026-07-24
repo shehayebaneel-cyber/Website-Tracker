@@ -19,9 +19,26 @@ import {
 
 const prisma = new PrismaClient();
 const RESEED = process.env.PRICING_RESEED === "true";
+/**
+ * Set by the production start command. Fills a catalogue that was never
+ * seeded (a migrated-but-empty database serves a website with no prices), and
+ * does nothing at all once one exists — so boots stay fast, and adding a
+ * default to pricingData.ts never puts a new priced item in front of customers
+ * as a side effect of a deploy. Run the seed deliberately for that.
+ */
+const ONLY_IF_EMPTY = process.env.PRICING_SEED_IF_EMPTY === "true";
 
 export async function seedPricing(db: PrismaClient = prisma) {
   console.log("\n— Pricing catalogue —");
+
+  if (ONLY_IF_EMPTY && !RESEED) {
+    const existing = await db.pricingPlan.count();
+    if (existing > 0) {
+      console.log(`  ${existing} plans already present → nothing to do`);
+      return;
+    }
+    console.log("  catalogue is empty → seeding defaults");
+  }
 
   if (RESEED) {
     console.log("  PRICING_RESEED=true → clearing existing catalogue");

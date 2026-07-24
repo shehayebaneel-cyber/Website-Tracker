@@ -10,10 +10,17 @@ services:
     runtime: node
     region: ohio # matches the Neon DB region (us-east) so queries stay fast
     plan: starter
+    # NOTE: the live service is deployed from the Dockerfile, which is the
+    # authority. Keep this in step with it — the public marketing site is served
+    # at / and must be built too, or the site ships with only the admin app.
     buildCommand: >-
       cd web && npm install && npm run build &&
+      cd ../public && npm install && npm run build &&
       cd ../server && npm install && npm run build
-    startCommand: cd server && npx prisma migrate deploy && node dist/index.js
+    startCommand: >-
+      cd server && npx prisma migrate deploy &&
+      { PRICING_SEED_IF_EMPTY=true npm run db:seed:pricing || echo '[start] pricing seed failed - continuing'; } &&
+      node dist/index.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

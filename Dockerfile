@@ -25,5 +25,12 @@ ENV NODE_ENV=production
 # Render provides PORT at runtime; the server listens on process.env.PORT.
 EXPOSE 4020
 
-# Apply any pending migrations (no-op if already applied), then start.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# Apply any pending migrations (no-op if already applied), make sure the pricing
+# catalogue exists, then start.
+#
+# PRICING_SEED_IF_EMPTY fills a database that has the tables but no catalogue —
+# which is what a migrated-but-never-seeded deploy serves: a website with no
+# prices. Once a catalogue exists it returns immediately, so boots stay fast and
+# admin-edited prices are never touched. It must NOT be able to take the site
+# down, so a failure is logged and start continues.
+CMD ["sh", "-c", "npx prisma migrate deploy && { PRICING_SEED_IF_EMPTY=true npm run db:seed:pricing || echo '[start] pricing seed failed - continuing'; } && node dist/index.js"]

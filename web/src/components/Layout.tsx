@@ -24,6 +24,7 @@ const NAV: NavItem[] = [
   { to: "/alerts", label: "Alerts", icon: "◔", section: "alerts", group: "main" },
   { to: "/reports", label: "Reports", icon: "▥", section: "reports", group: "main" },
   { to: "/activity", label: "Activity Log", icon: "❯", section: "activity", group: "main" },
+  { to: "/pricing", label: "Website Pricing", icon: "◎", section: "settings", group: "main" },
   { to: "/settings", label: "Settings", icon: "⚙", section: "settings", group: "main" },
   // Sales Management
   { to: "/sales", label: "Sales Dashboard", icon: "◇", section: "salesDashboard", group: "sales" },

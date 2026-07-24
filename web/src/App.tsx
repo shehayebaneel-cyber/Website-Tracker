@@ -20,6 +20,7 @@ import Alerts from "./pages/Alerts";
 import Reports from "./pages/Reports";
 import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
+import Pricing from "./pages/Pricing";
 import SalesDashboard from "./pages/sales/SalesDashboard";
 import SalesTeam from "./pages/sales/SalesTeam";
 import SalespersonProfile from "./pages/sales/SalespersonProfile";
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/activity" element={<Activity />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/pricing" element={<Pricing />} />
         {/* Sales Management */}
         <Route path="/sales" element={<SalesDashboard />} />
         <Route path="/sales/team" element={<SalesTeam />} />

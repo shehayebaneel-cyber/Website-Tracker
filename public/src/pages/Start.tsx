@@ -71,14 +71,14 @@ export default function Start() {
     if (plan) set("plan", plan);
     if (mod) set("needs", { ...form.needs, [mod]: true });
 
-    // ?feature=<addOnKey> — arrives from a feature card. The catalogue owns the
-    // name, so the form asks for it rather than trusting the URL's text.
+    // ?feature=<packKey> — arrives from a feature-pack card. The catalogue owns
+    // the name, so the form asks for it rather than trusting the URL's text.
     const features = params.getAll("feature");
     if (features.length) {
       loadCatalogue()
         .then((cat) => {
           const names = features
-            .map((k) => cat.addOns.find((a) => a.key === k)?.name)
+            .map((k) => cat.packs.find((p) => p.key === k)?.name)
             .filter((n): n is string => Boolean(n));
           if (names.length) {
             setForm((f) => {

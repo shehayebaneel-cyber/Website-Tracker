@@ -1,17 +1,16 @@
 import { Link } from "react-router-dom";
 import { Icon } from "../components/icons";
-import { SectionHeading, PlanCard, CTABand, LoadingCards, LoadError } from "../components/ui";
+import { SectionHeading, CTABand, LoadingCards, LoadError } from "../components/ui";
 import { TRUST, STEPS, PROJECTS } from "../data/content";
-import { useCatalogue, priceLabel } from "../lib/catalogue";
+import { useCatalogue, priceLabel, startingOptions } from "../lib/catalogue";
 import { ProjectCard } from "./OurWork";
 
 export default function Home() {
   const { catalogue, loading, error } = useCatalogue();
-  const plans = catalogue?.plans ?? [];
-  const cheapest = plans.length ? Math.min(...plans.map((p) => p.basePrice)) : null;
-  const categories = catalogue?.categories ?? [];
-  // Sub-features that ship inside another feature aren't counted or priced here.
-  const sellable = (catalogue?.addOns ?? []).filter((a) => !(a.pricingType === "bundled" && a.bundledWith));
+  const options = catalogue ? startingOptions(catalogue) : [];
+  const packs = catalogue?.packs ?? [];
+  // The entry price is the base website — everything else is added to it.
+  const cheapest = catalogue?.base?.price ?? null;
 
   return (
     <>
@@ -54,13 +53,30 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Plans preview */}
+      {/* Starting options */}
       <section className="section">
         <div className="container">
-          <SectionHeading center eyebrow="Simple monthly plans" title="Choose the plan that fits your business" sub="Every plan includes hosting, SSL and ongoing support. No large upfront cost." />
-          <div className="mt-12 grid gap-6 md:grid-cols-3" style={{ alignItems: "start" }}>
-            {loading && <LoadingCards count={3} height={520} />}
-            {plans.map((p) => <PlanCard key={p.key} plan={p} />)}
+          <SectionHeading
+            center
+            eyebrow="Simple monthly pricing"
+            title="Start with your website, then add what you need"
+            sub="Every website includes hosting, SSL and ongoing support. Systems and feature packs are added on top — nothing you don't use."
+          />
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4" style={{ alignItems: "start" }}>
+            {loading && <LoadingCards count={4} height={250} />}
+            {options.map((o) => {
+              const Ic = (Icon as any)[o.icon ?? "sparkle"] ?? Icon.sparkle;
+              return (
+                <Link key={o.key} to="/plans" className="card flex flex-col p-6 transition-transform hover:-translate-y-0.5" style={{ background: "var(--paper)" }}>
+                  <span style={{ color: "var(--orange)" }}><Ic /></span>
+                  <div className="mt-3 font-semibold" style={{ fontFamily: "var(--font-display)" }}>{o.name}</div>
+                  <div className="mt-1 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "1.6rem", color: "var(--orange)" }}>
+                    {priceLabel(o.price)}<span className="text-sm font-normal" style={{ color: "var(--muted)" }}>/month</span>
+                  </div>
+                  <p className="mt-2 flex-1 text-sm" style={{ color: "var(--muted)" }}>{o.description}</p>
+                </Link>
+              );
+            })}
           </div>
           {error && <div className="mt-10"><LoadError message={error} /></div>}
         </div>
@@ -69,21 +85,18 @@ export default function Home() {
       {/* Business systems preview */}
       <section className="section" style={{ background: "var(--cream)" }}>
         <div className="container">
-          <SectionHeading center eyebrow="Premium business systems" title="Build the system your business needs" sub="Add advanced modules to your website as your business grows." />
+          <SectionHeading center eyebrow="Feature packs" title="Add complete packs, not scattered features" sub="Related tools are grouped into one pack, so nothing overlaps and nothing is charged twice." />
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {loading && <LoadingCards count={6} height={190} />}
-            {categories.map((c) => {
-              const Ic = (Icon as any)[c.icon ?? "sparkle"] ?? Icon.sparkle;
-              const inCategory = sellable.filter((a) => a.categoryKey === c.key);
-              const from = Math.min(...inCategory.filter((a) => a.pricingType === "monthly" && a.price != null).map((a) => a.price!));
+            {packs.map((p) => {
+              const Ic = (Icon as any)[p.icon ?? "sparkle"] ?? Icon.sparkle;
               return (
-                <Link key={c.key} to="/business-systems" className="card flex flex-col p-6 transition-transform hover:-translate-y-0.5" style={{ background: "var(--paper)" }}>
+                <Link key={p.key} to="/business-systems" className="card flex flex-col p-6 transition-transform hover:-translate-y-0.5" style={{ background: "var(--paper)" }}>
                   <span style={{ color: "var(--orange)" }}><Ic /></span>
-                  <div className="mt-3 font-semibold" style={{ fontFamily: "var(--font-display)" }}>{c.name}</div>
-                  <p className="mt-1.5 flex-1 text-sm" style={{ color: "var(--muted)" }}>{c.blurb}</p>
+                  <div className="mt-3 font-semibold" style={{ fontFamily: "var(--font-display)" }}>{p.name}</div>
+                  <p className="mt-1.5 flex-1 text-sm" style={{ color: "var(--muted)" }}>{p.blurb}</p>
                   <div className="mt-3 text-sm font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>
-                    {inCategory.length} feature{inCategory.length === 1 ? "" : "s"}
-                    {Number.isFinite(from) && ` · from ${priceLabel(from)}/month`}
+                    {priceLabel(p.price, true)}/month · {p.features.length} features
                   </div>
                 </Link>
               );

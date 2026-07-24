@@ -128,6 +128,18 @@ a { color: inherit; text-decoration: none; }
 }
 @media (min-width: 1024px) { .builder-bar { display: none; } }
 
+/* modal — must fit a phone screen and never sit under the keyboard */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+  padding: 1rem; background: rgba(28, 25, 23, 0.45); backdrop-filter: blur(2px);
+  overflow-y: auto;
+}
+.modal-card {
+  width: 100%; max-width: 460px; max-height: calc(100dvh - 2rem); overflow-y: auto;
+  background: var(--paper); border-radius: var(--r-lg); padding: 1.5rem;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.45);
+}
+
 /* loading placeholder (catalogue-driven sections) */
 @keyframes shimmer { from { opacity: .55; } to { opacity: 1; } }
 .skeleton { background: var(--cream); border: 1px solid var(--line-2); border-radius: var(--r); animation: shimmer 1.1s ease-in-out infinite alternate; }

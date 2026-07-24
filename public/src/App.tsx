@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import { WhatsAppFab } from "./components/ui";
+import { ConfigurationProvider } from "./lib/configuration";
 import Home from "./pages/Home";
 import Plans from "./pages/Plans";
 import Builder from "./pages/Builder";
@@ -31,7 +32,9 @@ function ScrollToTop() {
 
 export default function App() {
   return (
-    <>
+    // The configuration wraps every route: a selection made on the Pricing page
+    // has to survive a visit to the Feature Packs page and back.
+    <ConfigurationProvider>
       <ScrollToTop />
       <Header />
       <main>
@@ -60,6 +63,6 @@ export default function App() {
       </main>
       <Footer />
       <WhatsAppFab />
-    </>
+    </ConfigurationProvider>
   );
 }

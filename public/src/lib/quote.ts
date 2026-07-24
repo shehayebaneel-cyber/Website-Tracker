@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Pricing in the browser.
 //
-// The Plan Builder needs a total that updates as fast as a customer clicks, so
-// it runs the REAL engine (`server/src/lib/pricing.ts`, aliased to `@engine`)
+// The builder needs a total that updates as fast as a customer clicks, so it
+// runs the REAL engine (`server/src/lib/pricing.ts`, aliased to `@engine`)
 // against the catalogue it already fetched. Not a copy of the rules — the same
 // module the server prices with, so the two cannot disagree.
 //
@@ -11,57 +11,73 @@
 // an estimate that happens to be computed by the same code.
 // ---------------------------------------------------------------------------
 
-import { quote as engineQuote, type Catalogue as EngineCatalogue, type Quote, type Selection } from "@engine";
+import {
+  quote as engineQuote,
+  maxStandardMonthly as engineMax,
+  packIsAvailable,
+  packsLostWithout as engineLost,
+  type Catalogue as EngineCatalogue,
+  type Quote,
+  type Selection,
+} from "@engine";
 import type { Catalogue } from "./catalogue";
 
 export type { Quote, Selection };
-export type { CoreSystem, LineItem, Recommendation, ValidationIssue } from "@engine";
+export type {
+  LineItem,
+  OneTimeLine,
+  ExternalLine,
+  ResolvedLimit,
+  UnmetRequirement,
+  ValidationIssue,
+} from "@engine";
+export { packIsAvailable };
 
-/**
- * The public payload flattens a plan's allowances into `included`; the engine
- * wants them at the top level. Everything else already lines up by name.
- */
+/** The API payload carries display fields the engine has no use for. */
 export function toEngineCatalogue(cat: Catalogue): EngineCatalogue {
   return {
-    plans: cat.plans.map((p) => ({
+    base: {
+      key: cat.base!.key,
+      name: cat.base!.name,
+      price: cat.base!.price,
+      includedSections: cat.base!.includedSections,
+      monthlyUpdates: cat.base!.monthlyUpdates,
+    },
+    systems: cat.systems.map((s) => ({
+      key: s.key,
+      name: s.name,
+      shortName: s.shortName,
+      price: s.price,
+      order: s.order,
+      limits: s.limits.map((l) => ({
+        key: l.key,
+        label: l.label,
+        unitLabel: l.unitLabel,
+        baseValue: l.baseValue,
+        upgradedValue: l.upgradedValue,
+      })),
+    })),
+    packs: cat.packs.map((p) => ({
       key: p.key,
       name: p.name,
-      basePrice: p.basePrice,
-      priceIsFrom: p.priceIsFrom,
-      coreSystemMode: p.coreSystemMode,
-      bothSystemsPrice: p.bothSystemsPrice,
-      includedSections: p.included.sections,
-      includedUpdates: p.included.updates,
-      includedProducts: p.included.products,
-      includedServices: p.included.services,
-      includedStaff: p.included.staff,
-      includedLocations: p.included.locations,
+      price: p.price,
+      requiresSystems: p.requiresSystems,
+      compatibleSystems: p.compatibleSystems,
+      requiresReason: p.requiresReason,
+      raisesLimits: p.raisesLimits,
       order: p.order,
     })),
-    addOns: cat.addOns.map((a) => ({
-      key: a.key,
-      name: a.name,
-      categoryKey: a.categoryKey,
-      pricingType: a.pricingType,
-      price: a.price,
-      priceIsFrom: a.priceIsFrom,
-      priceLabel: a.priceLabel,
-      minPlan: a.minPlan,
-      includedInPlans: a.includedInPlans,
-      bundledWith: a.bundledWith,
-      dependencies: a.dependencies,
+    oneTime: cat.oneTime.map((o) => ({
+      key: o.key,
+      name: o.name,
+      startingPrice: o.startingPrice,
+      isQuote: o.isQuote,
     })),
-    capacity: cat.capacity.map((c, i) => ({
-      key: c.key,
-      name: c.name,
-      unitLabel: c.unitLabel,
-      stepSize: c.stepSize,
-      pricePerStep: c.pricePerStep,
-      maxSteps: c.maxSteps,
-      appliesToPlans: c.appliesToPlans,
-      requiresCoreSystem: c.requiresCoreSystem,
-      // The API already returns capacity in `order`; keep that sequence.
-      order: i,
+    external: cat.external.map((e) => ({
+      key: e.key,
+      name: e.name,
+      provider: e.provider,
+      costType: e.costType,
     })),
   };
 }
@@ -70,50 +86,54 @@ export function priceSelection(cat: Catalogue, selection: Selection): Quote {
   return engineQuote(toEngineCatalogue(cat), selection);
 }
 
-/** The allowance a plan gives for one capacity dimension (null = unavailable). */
-export function allowanceFor(cat: Catalogue, planKey: string, capacityKey: string): number | null {
-  const p = cat.plans.find((x) => x.key === planKey);
-  if (!p) return null;
-  const map: Record<string, number | null> = {
-    products: p.included.products,
-    services: p.included.services,
-    staff: p.included.staff,
-    updates: p.included.updates,
-    locations: p.included.locations,
-    sections: p.included.sections,
-  };
-  return map[capacityKey] ?? null;
+export function maxStandardMonthly(cat: Catalogue): number {
+  return engineMax(toEngineCatalogue(cat));
+}
+
+/** Packs that would stop working if this system were removed. */
+export function packsLostWithout(
+  cat: Catalogue,
+  systemKeys: string[],
+  systemKey: string,
+  selectedPackKeys: string[]
+) {
+  return engineLost(toEngineCatalogue(cat), systemKeys, systemKey, selectedPackKeys);
 }
 
 /**
- * The message a customer sends on WhatsApp. Built from the quote, so it says
- * exactly what the summary said — including what still needs a quotation.
+ * The message a customer sends on WhatsApp. Built from the quote, so it can
+ * never claim a total the summary did not show.
  */
-export function quoteMessage(cat: Catalogue, q: Quote): string {
-  const planName = cat.plans.find((p) => p.key === q.planKey)?.name ?? q.planKey;
-  const core =
-    q.coreSystem === "booking" ? "booking system"
-    : q.coreSystem === "store" ? "online store"
-    : q.coreSystem === "both" ? "booking system and online store"
-    : null;
+export function quoteMessage(cat: Catalogue, q: Quote, websiteType: string): string {
+  const packNames = q.packKeys
+    .map((k) => cat.packs.find((p) => p.key === k)?.name)
+    .filter(Boolean) as string[];
 
   const lines = [
-    `Hi IGNIS, I built a plan on your website:`,
-    ``,
-    `Plan: ${planName}${core ? ` (${core})` : ""}`,
+    `Hello IGNIS, I would like ${addArticle(websiteType)}` +
+      (packNames.length ? ` with ${listSentence(packNames)}` : "") +
+      `. My estimated IGNIS subscription is $${q.monthlyTotal}/month.`,
   ];
 
-  const paid = q.monthly.filter((l) => l.kind !== "plan");
-  if (paid.length) {
-    lines.push(`Monthly extras: ${paid.map((l) => `${l.label} $${l.amount}`).join(", ")}`);
-  }
   if (q.oneTime.length) {
-    lines.push(`One-time: ${q.oneTime.map((l) => `${l.label} $${l.amount}`).join(", ")}`);
+    lines.push(
+      "",
+      "One-time services:",
+      ...q.oneTime.map((l) => `· ${l.label}${l.isQuote ? " (requires quotation)" : ` — $${l.amount}`}`)
+    );
   }
-  if (q.quoteItems.length) {
-    lines.push(`Needs a quotation: ${q.quoteItems.map((l) => l.label).join(", ")}`);
+  if (q.external.length) {
+    lines.push("", "External costs noted:", ...q.external.map((l) => `· ${l.label}`));
   }
-
-  lines.push(``, `Estimated total: $${q.monthlyTotal}/month${q.oneTimeTotal ? ` + $${q.oneTimeTotal} one-time` : ""}`);
   return lines.join("\n");
+}
+
+function addArticle(name: string): string {
+  return /^[aeiou]/i.test(name) ? `an ${name}` : `a ${name}`;
+}
+
+/** "A, B and C" — the way a person would say it. */
+export function listSentence(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }

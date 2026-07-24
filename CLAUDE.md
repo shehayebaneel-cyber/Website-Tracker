@@ -18,7 +18,14 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
 - `scripts/pg-start.ps1` is left over from the earlier local portable PostgreSQL 17 setup
   (port 5433, `server/.pgdata`). Its binaries path is hardcoded to `C:\Users\sheha\pgsql`,
   so it fails on the `arami` PC. Not needed while `.env` points at Neon.
-- Deploy: not yet deployed. Plan → Neon Postgres + Render (ask before first deploy).
+- **DEPLOYED AND LIVE: https://website-tracker-tvd8.onrender.com** — Render web service built
+  from the **`Dockerfile`** (not `render.yaml`'s buildCommand; keep the two in step anyway),
+  serving the public site at `/` and the admin app at `/app`. **Auto-deploys on push to `main`**
+  (~90s to go live). It runs against the Neon **production** branch (`ep-solitary-math-avho26j4`),
+  which is a DIFFERENT database from local dev — **local `migrate dev` / seeds never touch it**.
+  On boot it runs `prisma migrate deploy`, then the pricing seed with `PRICING_SEED_IF_EMPTY=true`
+  (fills a catalogue-less DB, no-ops in ~3s once one exists, failure is logged and start
+  continues). **So: a phase that adds a table also needs its data considered for production.**
 
 ## Commands
 - Start DB: `powershell -File scripts/pg-start.ps1` (stop: `pg-stop.ps1`)
@@ -214,9 +221,14 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   an editable message (company name from Settings config via `/api/app`), sends via **WhatsApp
   click-to-chat** (`wa.me`) or copy, and records reminder status (Not Sent/Sent/Followed Up/
   Payment Promised) on the invoice. Wired into Alerts + client-profile Invoices tab.
-- **Deploy — ARTIFACTS READY, not deployed** (needs your go + accounts): single Render web service
-  serves API + built SPA same-origin (`index.ts` serves `web/dist` in production). See `render.yaml`
-  + `DEPLOY.md`. Target: Neon Postgres. Both prod builds validated locally.
+- **Deploy — LIVE** at https://website-tracker-tvd8.onrender.com (see the Stack section for how it
+  builds and seeds). Single Render web service, same origin: public site `/`, admin `/app`, API
+  `/api`. Auto-deploys on push to `main`. Verified live after the Phase D push: 3 plans, 6
+  categories, 71 add-ons, 15 comparison rows, 16 FAQs, 8 business types, and `/quote` returning
+  $30/mo with Customer Accounts auto-added for Standard + booking + Loyalty.
+  **Watch out:** the first deploys served empty pricing pages because production had the migrated
+  tables but no catalogue — dev and production are separate Neon branches, and only dev had ever
+  been seeded. Check production data, not just a green build, after any phase that adds tables.
 - **Still deferred (need external accounts)**: automated email/WhatsApp *API* sending (current flow
   is manual-send, which is what the spec's review-before-send asks for), cloud file storage for
   receipt uploads, full .xlsx (vs CSV) import/export.

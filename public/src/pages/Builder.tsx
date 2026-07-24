@@ -31,6 +31,7 @@ import {
   type FeaturePack,
 } from "../lib/catalogue";
 import { packsLostWithout, priceSelection, quoteMessage, type Quote } from "../lib/quote";
+import { useMediaQuery } from "../lib/useMediaQuery";
 
 export default function Builder() {
   const { catalogue, loading, error } = useCatalogue();
@@ -41,6 +42,8 @@ export default function Builder() {
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [done, setDone] = useState<Done | null>(null);
+  const [step, setStep] = useState(0);
+  const compact = useMediaQuery("(max-width: 1023px)");
 
   // Prompts the customer must answer, never silent changes to their basket.
   const [addSystemFor, setAddSystemFor] = useState<{ pack: FeaturePack; systems: CoreSystem[] } | null>(null);
@@ -86,6 +89,15 @@ export default function Builder() {
   const websiteType = websiteTypeName(catalogue, quote.systemKeys);
   const blocked = quote.unmet.some((u) => u.blocking);
   const canSubmit = Boolean(config.info.contactName.trim() && config.info.phone.trim()) && !blocked;
+
+  // Which steps exist right now — "what you already have" only appears once a
+  // system is chosen, so the numbering and the phone's paging follow the same
+  // list rather than two hand-kept ones.
+  const hasSystems = quote.systemKeys.length > 0;
+  const stepKeys = ["info", "type", ...(hasSystems ? ["included"] : []), "packs", "onetime", "send"];
+  const at = (key: string) => stepKeys.indexOf(key);
+  const current = Math.min(step, stepKeys.length - 1);
+  const isHidden = (key: string) => compact && current !== at(key);
 
   /** Ask before adding a system on the customer's behalf. */
   function requestPack(pack: FeaturePack) {
@@ -155,8 +167,23 @@ export default function Builder() {
         <div className="container">
           <div className="builder-grid">
             <div className="flex flex-col gap-10">
+              {/* Phones page through the steps; desktops see them all at once. */}
+              {compact && (
+                <div>
+                  <div className="flex items-center justify-between text-sm" style={{ color: "var(--muted)" }}>
+                    <span>Step {current + 1} of {stepKeys.length}</span>
+                    <span>{priceLabel(quote.monthlyTotal)}/month so far</span>
+                  </div>
+                  <div className="mt-2 flex gap-1" aria-hidden>
+                    {stepKeys.map((k, i) => (
+                      <span key={k} style={{ flex: 1, height: 4, borderRadius: 999, background: i <= current ? "var(--orange)" : "var(--line)" }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 1 — business information */}
-              <Step n={1} title="Tell us about your business" hint="So we can recommend what fits and reach you afterwards.">
+              <Step n={at("info") + 1} hidden={isHidden("info")} title="Tell us about your business" hint="So we can recommend what fits and reach you afterwards.">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Business name">
                     <input className="in" value={config.info.businessName} onChange={(e) => setInfo({ businessName: e.target.value })} />
@@ -185,7 +212,7 @@ export default function Builder() {
               </Step>
 
               {/* 2 — website type */}
-              <Step n={2} title="Choose your website type" hint={`The ${priceLabel(catalogue.base!.price)} base website is always included.`}>
+              <Step n={at("type") + 1} hidden={isHidden("type")} title="Choose your website type" hint={`The ${priceLabel(catalogue.base!.price)} base website is always included.`}>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {catalogue.systems.map((s) => {
                     const on = config.systemKeys.includes(s.key);
@@ -219,7 +246,7 @@ export default function Builder() {
 
               {/* 3 — what is already included */}
               {quote.systemKeys.length > 0 && (
-                <Step n={3} title="What you already have" hint="These are part of your systems — you never pay a pack for them.">
+                <Step n={at("included") + 1} hidden={isHidden("included")} title="What you already have" hint="These are part of your systems — you never pay a pack for them.">
                   <div className="grid gap-4 sm:grid-cols-2">
                     {catalogue.systems
                       .filter((s) => quote.systemKeys.includes(s.key))
@@ -246,7 +273,8 @@ export default function Builder() {
 
               {/* 4 — feature packs */}
               <Step
-                n={quote.systemKeys.length > 0 ? 4 : 3}
+                n={at("packs") + 1}
+                hidden={isHidden("packs")}
                 title="Add feature packs"
                 hint={`Each pack is ${priceLabel(catalogue.packs[0]?.price ?? 5)}/month and groups everything related, so nothing overlaps.`}
               >
@@ -292,7 +320,8 @@ export default function Builder() {
 
               {/* 5 — one-time services */}
               <Step
-                n={quote.systemKeys.length > 0 ? 5 : 4}
+                n={at("onetime") + 1}
+                hidden={isHidden("onetime")}
                 title="Any one-time services?"
                 hint="Setup, design and data work. Charged once — never added to your monthly total."
               >
@@ -319,7 +348,8 @@ export default function Builder() {
 
               {/* 6 — send */}
               <Step
-                n={quote.systemKeys.length > 0 ? 6 : 5}
+                n={at("send") + 1}
+                hidden={isHidden("send")}
                 title="Send us your website"
                 hint="We review the configuration and confirm the final price before anything starts. No payment is taken here."
               >
@@ -351,6 +381,28 @@ export default function Builder() {
                   </div>
                 </form>
               </Step>
+              {compact && (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ flex: 1 }}
+                    disabled={current === 0}
+                    onClick={() => { setStep(current - 1); window.scrollTo({ top: 0 }); }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-dark"
+                    style={{ flex: 1 }}
+                    disabled={current >= stepKeys.length - 1}
+                    onClick={() => { setStep(current + 1); window.scrollTo({ top: 0 }); }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
 
             <Summary
@@ -460,7 +512,12 @@ interface Done {
   needsQuotation: boolean;
 }
 
-function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
+function Step({
+  n, title, hint, hidden, children,
+}: { n: number; title: string; hint?: string; hidden?: boolean; children: React.ReactNode }) {
+  // On a phone the builder shows one step at a time; on a desktop every step is
+  // on screen at once and this is never set.
+  if (hidden) return null;
   return (
     <section>
       <div className="flex items-center gap-3">

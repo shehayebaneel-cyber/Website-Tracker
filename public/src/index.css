@@ -118,6 +118,15 @@ a { color: inherit; text-decoration: none; }
   .builder-grid { grid-template-columns: minmax(0, 1fr) 360px; gap: 3rem; }
   .builder-summary { position: sticky; top: 88px; }
 }
+/* Nothing may sit under the fixed total bar, and a focused field must never
+   scroll to where the bar (or the keyboard) covers it. */
+@media (max-width: 1023px) {
+  .builder-grid { padding-bottom: 88px; }
+  .builder-grid .in,
+  .builder-grid select,
+  .builder-grid textarea { scroll-margin-block-end: 120px; }
+}
+
 /* running total on phones; right padding keeps it clear of the WhatsApp FAB */
 .builder-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;

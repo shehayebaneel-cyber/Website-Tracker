@@ -23,15 +23,15 @@ export default function Home() {
             Build Your Business <span style={{ color: "var(--orange)" }}>Online</span> with IGNIS
           </h1>
           <p className="lead rise mt-5" style={{ maxWidth: 620, marginInline: "auto" }}>
-            Professional websites and business systems without a large upfront cost. Choose a monthly plan and let us build, manage and support your online presence.
+            Professional websites and business systems without a large upfront cost. Start with your website, add only what your business needs, and we build, manage and support it.
           </p>
           <div className="rise mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link to="/plans" className="btn btn-primary" style={{ padding: "1.05rem 1.7rem" }}>View Website Plans <Icon.arrow /></Link>
+            <Link to="/plans" className="btn btn-primary" style={{ padding: "1.05rem 1.7rem" }}>See Pricing <Icon.arrow /></Link>
             <Link to="/start" className="btn btn-outline" style={{ padding: "1.05rem 1.7rem" }}>Tell Us About Your Business</Link>
           </div>
           {/* The entry price comes from the catalogue — shown only once known. */}
           <div className="rise mt-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm" style={{ background: "var(--cream)", color: "var(--ink-2)", visibility: cheapest == null ? "hidden" : undefined }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--orange)" }} /> Plans starting from <b style={{ color: "var(--ink)" }}>{priceLabel(cheapest ?? 0)} / month</b>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--orange)" }} /> Websites starting from <b style={{ color: "var(--ink)" }}>{priceLabel(cheapest ?? 0)} / month</b>
           </div>
         </div>
       </section>
@@ -103,7 +103,7 @@ export default function Home() {
             })}
           </div>
           <div className="mt-8 text-center">
-            <Link to="/business-systems" className="btn btn-dark">Explore business systems <Icon.arrow /></Link>
+            <Link to="/business-systems" className="btn btn-dark">Explore feature packs <Icon.arrow /></Link>
           </div>
         </div>
       </section>

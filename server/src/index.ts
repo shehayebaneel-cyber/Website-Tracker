@@ -35,6 +35,8 @@ import payoutsRouter from "./routes/payouts.js";
 import portalRouter from "./routes/portal.js";
 import publicRouter from "./routes/public.js";
 import publicPricingRouter from "./routes/publicPricing.js";
+import pricingAdminRouter from "./routes/pricingAdmin.js";
+import configurationsRouter from "./routes/configurations.js";
 import applicationsRouter from "./routes/applications.js";
 import { requireSection } from "./lib/perms.js";
 import { attachSalesContext } from "./lib/sales.js";
@@ -92,6 +94,7 @@ app.use("/api/export", requireSection("reports"), exporterRouter);
 app.use("/api/activity", requireSection("activity"), activityRouter);
 app.use("/api/users", requireSection("users"), usersRouter);
 app.use("/api/settings", requireSection("settings"), settingsRouter);
+app.use("/api/pricing-admin", requireSection("settings"), pricingAdminRouter);
 app.use("/api/import", requireSection("settings"), importerRouter);
 // Options list is needed by forms for every role.
 app.use("/api/options", optionsRouter);
@@ -105,6 +108,7 @@ app.use("/api/commissions", attachSalesContext, commissionsRouter);
 app.use("/api/followups", attachSalesContext, followupsRouter);
 app.use("/api/payouts", attachSalesContext, payoutsRouter);
 app.use("/api/applications", requireSection("applications"), applicationsRouter);
+app.use("/api/configurations", requireSection("applications"), configurationsRouter);
 
 // In production, serve BOTH front-ends from the same origin as the API:
 //   /       -> public marketing site (public/dist)

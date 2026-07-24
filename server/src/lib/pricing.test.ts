@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// The 9 configuration scenarios from the pricing spec (section 27), run against
-// the real catalogue in the database. These are the acceptance criteria for the
+// The testing scenarios from the pricing spec (section 32), run against the
+// real catalogue in the database. These are the acceptance criteria for the
 // pricing engine: if they pass, every surface built on `quote()` shows numbers
 // that agree with each other.
 //
@@ -13,7 +13,14 @@
 import "dotenv/config";
 import { prisma } from "./db.js";
 import { loadCatalogue } from "./pricingCatalogue.js";
-import { quote, type Catalogue, type Quote } from "./pricing.js";
+import {
+  quote,
+  maxStandardMonthly,
+  packIsAvailable,
+  packsLostWithout,
+  type Catalogue,
+  type Quote,
+} from "./pricing.js";
 
 let passed = 0;
 let failed = 0;
@@ -36,194 +43,246 @@ function lines(q: Quote): string {
   return q.monthly.map((l) => `${l.label} $${l.amount}`).join(" + ");
 }
 
+const ALL_PACKS = [
+  "capacity-scale",
+  "customers-loyalty",
+  "staff-operations",
+  "inventory-suppliers",
+  "delivery-tracking",
+  "insights-automation",
+];
+
 async function run(cat: Catalogue) {
-  // -- Scenario 1: Basic website ------------------------------------------
-  console.log("\n  Scenario 1 — Basic website");
+  // -- 1. Informational website ----------------------------------------------
+  console.log("\n  Informational website");
   {
-    const q = quote(cat, { planKey: "basic", capacities: { sections: 6 } });
+    const q = quote(cat, {});
     console.log(`    ${lines(q)}`);
-    eq("monthly total is $10", q.monthlyTotal, 10);
-    eq("no plan upgrade", q.upgrades.length, 0);
-    eq("no blocking issues", q.issues.filter((i) => i.blocking).length, 0);
+    eq("total is $10", q.monthlyTotal, 10);
+    eq("one line only", q.monthly.length, 1);
+    eq("no systems", q.systemKeys.length, 0);
+    check("no limits to show", q.limits.length === 0);
   }
 
-  // -- Scenario 2: Standard booking ---------------------------------------
-  console.log("\n  Scenario 2 — Standard booking, 30 services, 3 staff");
+  // -- 2. Booking website ------------------------------------------------------
+  console.log("\n  Booking website");
   {
-    const q = quote(cat, {
-      planKey: "standard", coreSystem: "booking",
-      capacities: { services: 30, staff: 3 },
-    });
+    const q = quote(cat, { systemKeys: ["booking"] });
     console.log(`    ${lines(q)}`);
-    eq("monthly total is $20", q.monthlyTotal, 20);
-    eq("nothing charged above the allowance", q.monthly.filter((l) => l.kind === "capacity").length, 0);
+    eq("total is $20", q.monthlyTotal, 20);
+    eq("base is still charged once", q.monthly.filter((l) => l.kind === "base").length, 1);
+    eq("30 services included", q.limits.find((l) => l.key === "services")?.value, 30);
+    eq("3 bookable staff included", q.limits.find((l) => l.key === "staff")?.value, 3);
   }
 
-  // -- Scenario 3: Standard store, 100 products ---------------------------
-  console.log("\n  Scenario 3 — Standard store, 100 products");
+  // -- 3. E-commerce website ---------------------------------------------------
+  console.log("\n  E-commerce website");
   {
-    const q = quote(cat, {
-      planKey: "standard", coreSystem: "store", capacities: { products: 100 },
-    });
+    const q = quote(cat, { systemKeys: ["store"] });
     console.log(`    ${lines(q)}`);
-    eq("monthly total is $25", q.monthlyTotal, 25);
-    const cap = q.monthly.find((l) => l.kind === "capacity" && l.key === "products");
-    eq("charged for 50 extra products", cap?.amount, 5);
-    check("shows what was included", cap?.detail?.includes("50 included") ?? false, cap?.detail);
+    eq("total is $20", q.monthlyTotal, 20);
+    eq("50 products included", q.limits.find((l) => l.key === "products")?.value, 50);
   }
 
-  // -- Scenario 4: Standard + Customer Accounts ---------------------------
-  console.log("\n  Scenario 4 — Standard store + Customer Accounts");
+  // -- 4. Booking and E-commerce ----------------------------------------------
+  console.log("\n  Booking and E-commerce");
   {
-    const q = quote(cat, {
-      planKey: "standard", coreSystem: "store", addOnKeys: ["customer-accounts"],
-    });
+    const q = quote(cat, { systemKeys: ["booking", "store"] });
     console.log(`    ${lines(q)}`);
-    eq("monthly total is $25", q.monthlyTotal, 25);
-    eq("stays on Standard", q.planKey, "standard");
-  }
+    eq("total is $30", q.monthlyTotal, 30);
 
-  // -- Scenario 5: Premium ------------------------------------------------
-  console.log("\n  Scenario 5 — Premium booking + Customer Accounts");
-  {
-    const q = quote(cat, {
-      planKey: "premium", coreSystem: "booking", addOnKeys: ["customer-accounts"],
-    });
-    console.log(`    ${lines(q)}`);
-    eq("monthly total is $30", q.monthlyTotal, 30);
-    const ca = q.included.find((l) => l.key === "customer-accounts");
-    check("Customer Accounts shown as included", !!ca, "not found in included[]");
-    eq("Customer Accounts not charged again", q.monthly.filter((l) => l.key === "customer-accounts").length, 0);
-  }
-
-  // -- Scenario 6: Premium + Inventory ------------------------------------
-  console.log("\n  Scenario 6 — Premium store + Inventory Management");
-  {
-    const q = quote(cat, {
-      planKey: "premium", coreSystem: "store", addOnKeys: ["inventory-management"],
-    });
-    console.log(`    ${lines(q)}`);
-    eq("monthly total is $40", q.monthlyTotal, 40);
-  }
-
-  // -- Scenario 7: Standard customer selects Inventory --------------------
-  console.log("\n  Scenario 7 — Standard selects Inventory (Premium required)");
-  {
-    const q = quote(cat, {
-      planKey: "standard", coreSystem: "store", addOnKeys: ["inventory-management"],
-    });
-    console.log(`    ${lines(q)}`);
-    eq("plan escalated to Premium", q.planKey, "premium");
-    eq("requested plan preserved", q.requestedPlanKey, "standard");
-    eq("one upgrade recorded", q.upgrades.length, 1);
-    check("upgrade names the trigger", q.upgrades[0]?.triggeredBy.includes("Inventory Management"), JSON.stringify(q.upgrades[0]?.triggeredBy));
-    check("upgrade explains why", (q.upgrades[0]?.message ?? "").includes("advanced business management tools"), q.upgrades[0]?.message);
-    eq("priced as Premium + Inventory", q.monthlyTotal, 40);
-  }
-
-  // -- Scenario 8: Premium + Advanced Analytics ---------------------------
-  console.log("\n  Scenario 8 — Premium + Advanced Reports & Analytics");
-  {
-    const q = quote(cat, {
-      planKey: "premium", coreSystem: "booking", addOnKeys: ["advanced-reports"],
-    });
-    console.log(`    ${lines(q)}`);
-    eq("Advanced Reports charged as an add-on", q.monthly.find((l) => l.key === "advanced-reports")?.amount, 5);
-    eq("monthly total is $35", q.monthlyTotal, 35);
-  }
-
-  // -- Scenario 9: Custom quotation ---------------------------------------
-  console.log("\n  Scenario 9 — Premium + custom integration (quotation)");
-  {
-    const q = quote(cat, {
-      planKey: "premium", coreSystem: "store", addOnKeys: ["custom-admin-tools"],
-    });
-    console.log(`    ${lines(q)}`);
-    eq("quote item listed separately", q.quoteItems.length, 1);
-    eq("no invented price in the total", q.monthlyTotal, 30);
-    eq("quote item carries no amount", q.quoteItems[0]?.amount, 0);
-  }
-
-  // -- Extra: rules the spec states outside the scenario list -------------
-  console.log("\n  Dependency and duplicate-charge rules");
-  {
-    // Loyalty requires Customer Accounts (section 15)
-    const q = quote(cat, {
-      planKey: "standard", coreSystem: "store", addOnKeys: ["loyalty-rewards"],
-    });
-    const auto = q.autoAdded.find((a) => a.key === "customer-accounts");
-    check("Loyalty auto-adds Customer Accounts", !!auto, JSON.stringify(q.autoAdded));
-    check("and explains why", (auto?.message ?? "").includes("Loyalty and Rewards requires Customer Accounts"), auto?.message);
-    eq("Standard + Loyalty + Customer Accounts = $30", q.monthlyTotal, 30);
-  }
-  {
-    // On Premium the auto-added dependency must not be charged (section 16)
-    const q = quote(cat, {
-      planKey: "premium", coreSystem: "store", addOnKeys: ["loyalty-rewards"],
-    });
-    eq("Premium + Loyalty = $35 (accounts included)", q.monthlyTotal, 35);
-    check("Customer Accounts included, not charged", q.included.some((l) => l.key === "customer-accounts"), JSON.stringify(q.included.map((i) => i.key)));
-  }
-  {
-    // Section 10 — recommend the cheaper plan rather than switching silently
-    const q = quote(cat, {
-      planKey: "standard", coreSystem: "store",
-      addOnKeys: ["customer-accounts", "advanced-reports"],
-      capacities: { updates: 5 },
-    });
-    // The spec's own example ($33 Standard) assumes Premium includes the reports
-    // the customer paid for — it doesn't; section 4 makes Advanced Reports an
-    // add-on on BOTH plans. So Premium is $35 here, i.e. $2 MORE, and the
-    // recommendation must say so honestly rather than claim a saving.
-    console.log(`    Standard stack: $${q.monthlyTotal}/month`);
-    eq("Standard stack totals $33", q.monthlyTotal, 33);
-    eq("still surfaces Premium", q.recommendation?.switchTo, "premium");
-    eq("but labels it as costing more", q.recommendation?.kind, "unlocks");
-    eq("with the true difference", q.recommendation?.difference, 2);
-    check("and never claims a saving", (q.recommendation?.message ?? "").includes("more"), q.recommendation?.message);
-  }
-  {
-    // Section 4 — Standard may not have both core systems
-    const q = quote(cat, { planKey: "standard", coreSystem: "both" });
-    check("Standard blocks 'both'", q.issues.some((i) => i.code === "core-both-unavailable" && i.blocking), JSON.stringify(q.issues));
-    const p = quote(cat, { planKey: "premium", coreSystem: "both" });
-    eq("Premium prices the second system", p.monthlyTotal, 40);
-  }
-  {
-    // Section 25 — a core system must be chosen
-    const q = quote(cat, { planKey: "standard" });
-    check("missing core system blocks submission", q.issues.some((i) => i.code === "core-required" && i.blocking), JSON.stringify(q.issues));
-  }
-  {
-    // A cheaper plan that cannot do what was asked for is not a saving.
-    // Basic has no core system, so pricing a booking setup against it drops
-    // the booking system and makes $10 look like a $10/month saving.
-    const q = quote(cat, { planKey: "standard", coreSystem: "booking" });
-    check(
-      "never recommends a plan that drops the chosen core system",
-      q.recommendation?.switchTo !== "basic",
-      JSON.stringify(q.recommendation)
-    );
-    const s = quote(cat, { planKey: "standard", coreSystem: "store" });
-    check(
-      "same for an online store",
-      s.recommendation?.switchTo !== "basic",
-      JSON.stringify(s.recommendation)
+    // The promise that adding the second system later costs the same as having
+    // had it from the start.
+    const booking = quote(cat, { systemKeys: ["booking"] });
+    const store = quote(cat, { systemKeys: ["store"] });
+    eq("adding E-commerce to Booking costs exactly $10", q.monthlyTotal - booking.monthlyTotal, 10);
+    eq("adding Booking to E-commerce costs exactly $10", q.monthlyTotal - store.monthlyTotal, 10);
+    eq(
+      "both together cost exactly the sum of the two",
+      q.monthlyTotal,
+      booking.monthlyTotal + store.monthlyTotal - cat.base.price
     );
   }
+
+  // -- 5. Booking with three packs ---------------------------------------------
+  console.log("\n  Booking with three packs");
   {
-    // Bundled features never carry their own price
     const q = quote(cat, {
-      planKey: "premium", coreSystem: "store", addOnKeys: ["low-stock-alerts"],
+      systemKeys: ["booking"],
+      packKeys: ["customers-loyalty", "staff-operations", "insights-automation"],
     });
-    check("bundled feature shown as included", q.included.some((l) => l.key === "low-stock-alerts"), JSON.stringify(q.included.map((i) => i.key)));
-    check("and pulls in its parent module", q.monthly.some((l) => l.key === "inventory-management"), lines(q));
+    console.log(`    ${lines(q)}`);
+    eq("total is $35", q.monthlyTotal, 35);
+    eq("all three packs charged", q.packKeys.length, 3);
+    eq("nothing unmet", q.unmet.length, 0);
+  }
+
+  // -- 6. E-commerce with four packs -------------------------------------------
+  console.log("\n  E-commerce with four packs");
+  {
+    const q = quote(cat, {
+      systemKeys: ["store"],
+      packKeys: ["capacity-scale", "customers-loyalty", "inventory-suppliers", "delivery-tracking"],
+    });
+    console.log(`    ${lines(q)}`);
+    eq("total is $40", q.monthlyTotal, 40);
+    eq("capacity raises products to 250", q.limits.find((l) => l.key === "products")?.value, 250);
+    check("and marks it as upgraded", q.limits.find((l) => l.key === "products")?.upgraded === true);
+  }
+
+  // -- 7. Complete configuration -----------------------------------------------
+  console.log("\n  Complete configuration");
+  {
+    const q = quote(cat, { systemKeys: ["booking", "store"], packKeys: ALL_PACKS });
+    console.log(`    ${lines(q)}`);
+    eq("total is $60", q.monthlyTotal, 60);
+    eq("which is the catalogue's maximum", q.monthlyTotal, maxStandardMonthly(cat));
+    eq("one capacity pack raises every limit", q.limits.filter((l) => l.upgraded).length, 3);
+    eq("services raised to 100", q.limits.find((l) => l.key === "services")?.value, 100);
+    eq("staff raised to 10", q.limits.find((l) => l.key === "staff")?.value, 10);
+    eq("products raised to 250", q.limits.find((l) => l.key === "products")?.value, 250);
+    check("no issue is raised at the maximum", q.issues.length === 0, JSON.stringify(q.issues));
+  }
+
+  // -- The $60 ceiling, proven rather than asserted ------------------------------
+  console.log("\n  The standard maximum");
+  {
+    eq("catalogue maximum is $60", maxStandardMonthly(cat), 60);
+    // Nothing a customer can select may exceed it.
+    const everything = quote(cat, {
+      systemKeys: cat.systems.map((s) => s.key),
+      packKeys: cat.packs.map((p) => p.key),
+      oneTimeKeys: cat.oneTime.map((o) => o.key),
+      externalKeys: cat.external.map((e) => e.key),
+    });
+    eq("selecting literally everything still costs $60/month", everything.monthlyTotal, 60);
+    check(
+      "one-time work is excluded from the monthly total",
+      everything.oneTime.length > 0 && everything.monthlyTotal === 60
+    );
+    check(
+      "external costs are excluded from every IGNIS total",
+      everything.external.length > 0 && everything.oneTimeTotal === everything.oneTime.reduce((s, l) => s + (l.amount ?? 0), 0)
+    );
+  }
+
+  // -- 8. Booking customer selects Delivery --------------------------------------
+  console.log("\n  Booking customer selects Delivery");
+  {
+    const q = quote(cat, { systemKeys: ["booking"], packKeys: ["delivery-tracking"] });
+    console.log(`    ${lines(q)}`);
+    eq("the pack is not charged", q.monthlyTotal, 20);
+    eq("one unmet requirement is reported", q.unmet.length, 1);
+    check("it explains why", (q.unmet[0]?.message ?? "").toLowerCase().includes("e-commerce"));
+    eq("it offers E-commerce as the fix", q.unmet[0]?.addSystems[0]?.key, "store");
+    eq("at $10", q.unmet[0]?.addSystems[0]?.price, 10);
+    check("and blocks submission until resolved", q.unmet[0]?.blocking === true);
+
+    // Accepting the offer produces exactly the promised price.
+    const fixed = quote(cat, { systemKeys: ["booking", "store"], packKeys: ["delivery-tracking"] });
+    eq("accepting it costs $10 more, plus the pack", fixed.monthlyTotal, 35);
+    eq("and nothing is unmet", fixed.unmet.length, 0);
+  }
+
+  // -- Inventory has the same requirement -----------------------------------------
+  console.log("\n  Booking customer selects Inventory");
+  {
+    const q = quote(cat, { systemKeys: ["booking"], packKeys: ["inventory-suppliers"] });
+    eq("not charged", q.monthlyTotal, 20);
+    eq("offers E-commerce", q.unmet[0]?.addSystems[0]?.key, "store");
+  }
+
+  // -- 9. Customer removes E-commerce ---------------------------------------------
+  console.log("\n  Customer removes E-commerce");
+  {
+    const selected = ["customers-loyalty", "inventory-suppliers", "delivery-tracking"];
+    const lost = packsLostWithout(cat, ["booking", "store"], "store", selected);
+    eq("two packs would be lost", lost.length, 2);
+    check(
+      "and they are named so the customer can confirm",
+      lost.map((p) => p.key).sort().join(",") === "delivery-tracking,inventory-suppliers",
+      lost.map((p) => p.key).join(",")
+    );
+    check(
+      "Customers & Loyalty survives, because it needs no particular system",
+      !lost.some((p) => p.key === "customers-loyalty")
+    );
+  }
+
+  // -- Packs need a core system ----------------------------------------------------
+  console.log("\n  Informational-only cannot take packs");
+  {
+    for (const key of ALL_PACKS) {
+      const pack = cat.packs.find((p) => p.key === key)!;
+      check(`${pack.name} unavailable with no system`, !packIsAvailable(pack, []));
+    }
+    const q = quote(cat, { packKeys: ["customers-loyalty"] });
+    eq("so the total stays at $10", q.monthlyTotal, 10);
+    eq("and the reason is reported", q.unmet.length, 1);
+  }
+
+  // -- 10. Duplicate pack ------------------------------------------------------------
+  console.log("\n  Duplicate selections");
+  {
+    const q = quote(cat, {
+      systemKeys: ["booking", "booking"],
+      packKeys: ["customers-loyalty", "customers-loyalty", "customers-loyalty"],
+    });
+    console.log(`    ${lines(q)}`);
+    eq("the pack is charged once", q.monthly.filter((l) => l.key === "customers-loyalty").length, 1);
+    eq("the system is charged once", q.monthly.filter((l) => l.key === "booking").length, 1);
+    eq("total is $25", q.monthlyTotal, 25);
+  }
+
+  // -- 11. Custom integration ---------------------------------------------------------
+  console.log("\n  Custom integration");
+  {
+    const q = quote(cat, {
+      systemKeys: ["store"],
+      oneTimeKeys: ["custom-integration", "logo-design"],
+    });
+    const custom = q.oneTime.find((l) => l.key === "custom-integration")!;
+    check("shown as requiring a quotation", custom.isQuote === true);
+    eq("with no invented price", custom.amount, null);
+    eq("the monthly total is untouched", q.monthlyTotal, 20);
+    eq("priced setup work still totals correctly", q.oneTimeTotal, 60);
+    check("and the quote flag is raised", q.oneTimeNeedsQuote === true);
+  }
+
+  // -- 12. External costs ---------------------------------------------------------------
+  console.log("\n  External provider costs");
+  {
+    const q = quote(cat, { systemKeys: ["store"], externalKeys: ["domain", "gateway-fees"] });
+    eq("listed for the customer", q.external.length, 2);
+    eq("but never added to the monthly total", q.monthlyTotal, 20);
+    eq("nor to the one-time total", q.oneTimeTotal, 0);
+  }
+
+  // -- Worked examples in the catalogue must price to what they claim ----------------------
+  console.log("\n  Example setups price correctly");
+  {
+    const setups = await prisma.recommendedSetup.findMany({ where: { active: true }, orderBy: { order: "asc" } });
+    const expected: Record<string, number> = {
+      informational: 10,
+      salon: 35,
+      retail: 40,
+      restaurant: 40,
+      complete: 60,
+    };
+    for (const s of setups) {
+      const q = quote(cat, { systemKeys: s.systemKeys, packKeys: s.packKeys });
+      eq(`${s.name} is $${expected[s.key]}`, q.monthlyTotal, expected[s.key]);
+      check(`${s.name} has no unmet requirement`, q.unmet.length === 0, JSON.stringify(q.unmet));
+    }
   }
 }
 
 async function main() {
   const cat = await loadCatalogue();
-  console.log(`Catalogue: ${cat.plans.length} plans · ${cat.addOns.length} add-ons · ${cat.capacity.length} capacity upgrades`);
+  console.log(
+    `Catalogue: base $${cat.base.price} · ${cat.systems.length} systems · ${cat.packs.length} packs · ` +
+      `${cat.oneTime.length} one-time · ${cat.external.length} external`
+  );
   await run(cat);
 
   console.log(`\n${passed} passed, ${failed} failed\n`);

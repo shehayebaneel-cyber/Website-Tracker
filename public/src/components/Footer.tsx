@@ -15,7 +15,7 @@ export default function Footer() {
             </p>
           </div>
 
-          <FooterCol title="Explore" links={[["Plans", "/plans"], ["Plan Builder", "/builder"], ["Business Systems", "/business-systems"], ["Our Work", "/our-work"], ["How It Works", "/how-it-works"], ["FAQ", "/faq"], ["About", "/about"]]} />
+          <FooterCol title="Explore" links={[["Pricing", "/plans"], ["Feature Packs", "/business-systems"], ["Website Builder", "/builder"], ["Help Me Build", "/help-me-build"], ["Our Work", "/our-work"], ["How It Works", "/how-it-works"], ["FAQ", "/faq"], ["About", "/about"]]} />
           <FooterCol title="Get help" links={[["Start Your Website", "/start"], ["Client Support", "/support"], ["Client Login", "/login"], ["Contact", "/contact"]]} />
 
           <div>

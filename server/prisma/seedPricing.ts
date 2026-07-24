@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
 // Seeds the pricing catalogue from pricingData.ts.
 //
-// Idempotent and NON-DESTRUCTIVE by design: keyed records are upserted, and
-// records the admin can freely edit (inclusions, comparison rows, FAQs, terms)
-// are only created when they don't exist yet. Re-running never overwrites a
-// price or wording changed in the admin console.
+// Idempotent and NON-DESTRUCTIVE by design: keyed records are upserted with an
+// empty `update`, and the child rows of a record (inclusions, limits, pack
+// features) are only created when that record has none. Re-running never
+// overwrites a price or wording changed in the admin console.
 //
 // To deliberately reset everything back to these defaults:
 //   PRICING_RESEED=true npm run db:seed:pricing
@@ -13,8 +13,8 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import {
-  PLANS, CATEGORIES, ADDONS, CAPACITY, COMPARISON,
-  BUSINESS_TYPES, GLOSSARY, TERMS, EXTERNAL_COSTS, FAQS,
+  BASE, SYSTEMS, PACKS, ONE_TIME, EXTERNAL_COSTS, COMPARISON,
+  SETUPS, BUSINESS_TYPES, GLOSSARY, TERMS, FAQS, CONTENT,
 } from "./pricingData.js";
 
 const prisma = new PrismaClient();
@@ -32,9 +32,9 @@ export async function seedPricing(db: PrismaClient = prisma) {
   console.log("\n— Pricing catalogue —");
 
   if (ONLY_IF_EMPTY && !RESEED) {
-    const existing = await db.pricingPlan.count();
+    const existing = await db.coreSystem.count();
     if (existing > 0) {
-      console.log(`  ${existing} plans already present → nothing to do`);
+      console.log(`  ${existing} core systems already present → nothing to do`);
       return;
     }
     console.log("  catalogue is empty → seeding defaults");
@@ -42,98 +42,100 @@ export async function seedPricing(db: PrismaClient = prisma) {
 
   if (RESEED) {
     console.log("  PRICING_RESEED=true → clearing existing catalogue");
-    await db.addOnDependency.deleteMany({});
-    await db.addOn.deleteMany({});
-    await db.addOnCategory.deleteMany({});
-    await db.planInclusion.deleteMany({});
-    await db.pricingPlan.deleteMany({});
-    await db.capacityUpgrade.deleteMany({});
+    await db.packFeature.deleteMany({});
+    await db.featurePack.deleteMany({});
+    await db.systemLimit.deleteMany({});
+    await db.systemInclusion.deleteMany({});
+    await db.coreSystem.deleteMany({});
+    await db.baseInclusion.deleteMany({});
+    await db.baseWebsite.deleteMany({});
+    await db.oneTimeService.deleteMany({});
+    await db.externalCost.deleteMany({});
     await db.comparisonRow.deleteMany({});
+    await db.recommendedSetup.deleteMany({});
     await db.pricingFaq.deleteMany({});
     await db.pricingTerm.deleteMany({});
+    await db.pricingContent.deleteMany({});
     await db.businessType.deleteMany({});
   }
 
-  // --- plans + inclusions ----------------------------------------------------
-  for (const p of PLANS) {
-    const { inclusions, ...plan } = p;
-    const row = await db.pricingPlan.upsert({
-      where: { key: p.key },
-      update: {}, // never overwrite admin edits to an existing plan
-      create: plan,
+  // --- base website ----------------------------------------------------------
+  {
+    const { inclusions, ...base } = BASE;
+    const row = await db.baseWebsite.upsert({
+      where: { key: base.key },
+      update: {}, // never overwrite admin edits
+      create: base,
     });
-    const existing = await db.planInclusion.count({ where: { planId: row.id } });
-    if (existing === 0) {
-      await db.planInclusion.createMany({
-        data: inclusions.map(([label, coreSystem], i) => ({
-          planId: row.id, label, coreSystem, order: i,
-        })),
+    if ((await db.baseInclusion.count({ where: { baseId: row.id } })) === 0) {
+      await db.baseInclusion.createMany({
+        data: inclusions.map((label, order) => ({ baseId: row.id, label, order })),
       });
     }
+    console.log(`  base website $${base.price} · ${inclusions.length} inclusions`);
   }
-  console.log(`  ${PLANS.length} plans`);
 
-  // --- categories ------------------------------------------------------------
-  const catId = new Map<string, string>();
-  for (const c of CATEGORIES) {
-    const row = await db.addOnCategory.upsert({
-      where: { key: c.key }, update: {}, create: c,
-    });
-    catId.set(c.key, row.id);
-  }
-  console.log(`  ${CATEGORIES.length} categories`);
-
-  // --- add-ons + dependencies -----------------------------------------------
-  for (const a of ADDONS) {
-    const categoryId = catId.get(a.category);
-    if (!categoryId) throw new Error(`Add-on "${a.key}" references unknown category "${a.category}"`);
-
-    const row = await db.addOn.upsert({
-      where: { key: a.key },
+  // --- core systems ----------------------------------------------------------
+  for (const s of SYSTEMS) {
+    const { inclusions, limits, ...system } = s;
+    const row = await db.coreSystem.upsert({
+      where: { key: s.key },
       update: {},
-      create: {
-        key: a.key,
-        categoryId,
-        name: a.name,
-        blurb: a.blurb,
-        bestFor: a.bestFor ?? null,
-        includes: a.includes,
-        pricingType: a.pricingType,
-        price: a.price ?? null,
-        priceLabel: a.priceLabel ?? null,
-        minPlan: a.minPlan,
-        includedInPlans: a.includedInPlans ?? [],
-        bundledWith: a.bundledWith ?? null,
-        recommendedFor: a.recommendedFor ?? [],
-        popular: a.popular ?? false,
-        order: a.order,
-      },
+      create: system,
     });
-
-    const depCount = await db.addOnDependency.count({ where: { addOnId: row.id } });
-    if (depCount === 0 && a.deps?.length) {
-      await db.addOnDependency.createMany({
-        data: a.deps.map(([requiresType, requiresKey, note]) => ({
-          addOnId: row.id, requiresType, requiresKey, note: note ?? null,
-        })),
+    if ((await db.systemInclusion.count({ where: { systemId: row.id } })) === 0) {
+      await db.systemInclusion.createMany({
+        data: inclusions.map((label, order) => ({ systemId: row.id, label, order })),
+      });
+    }
+    for (const [order, l] of limits.entries()) {
+      await db.systemLimit.upsert({
+        where: { systemId_key: { systemId: row.id, key: l.key } },
+        update: {},
+        create: { ...l, systemId: row.id, order },
       });
     }
   }
-  console.log(`  ${ADDONS.length} add-ons`);
+  console.log(`  ${SYSTEMS.length} core systems`);
 
-  // --- capacity upgrades -----------------------------------------------------
-  for (const c of CAPACITY) {
-    await db.capacityUpgrade.upsert({ where: { key: c.key }, update: {}, create: c });
+  // --- feature packs ---------------------------------------------------------
+  for (const p of PACKS) {
+    const { features, ...pack } = p;
+    const row = await db.featurePack.upsert({
+      where: { key: p.key },
+      update: {},
+      create: pack,
+    });
+    if ((await db.packFeature.count({ where: { packId: row.id } })) === 0) {
+      await db.packFeature.createMany({
+        data: features.map((label, order) => ({ packId: row.id, label, order })),
+      });
+    }
   }
-  console.log(`  ${CAPACITY.length} capacity upgrades`);
+  console.log(`  ${PACKS.length} feature packs`);
 
-  // --- business types --------------------------------------------------------
+  // --- one-time services and external costs ----------------------------------
+  for (const o of ONE_TIME) {
+    await db.oneTimeService.upsert({ where: { key: o.key }, update: {}, create: o });
+  }
+  for (const e of EXTERNAL_COSTS) {
+    await db.externalCost.upsert({ where: { key: e.key }, update: {}, create: e });
+  }
+  console.log(`  ${ONE_TIME.length} one-time services · ${EXTERNAL_COSTS.length} external costs`);
+
+  // --- recommended setups and business types ---------------------------------
+  for (const s of SETUPS) {
+    await db.recommendedSetup.upsert({ where: { key: s.key }, update: {}, create: s });
+  }
   for (const b of BUSINESS_TYPES) {
     await db.businessType.upsert({ where: { key: b.key }, update: {}, create: b });
   }
-  console.log(`  ${BUSINESS_TYPES.length} business types`);
+  for (const c of CONTENT) {
+    await db.pricingContent.upsert({ where: { key: c.key }, update: {}, create: c });
+  }
+  console.log(`  ${SETUPS.length} example setups · ${BUSINESS_TYPES.length} business types · ${CONTENT.length} content keys`);
 
-  // --- editable content: only when empty ------------------------------------
+  // --- editable content: only when empty -------------------------------------
   if ((await db.comparisonRow.count()) === 0) {
     await db.comparisonRow.createMany({ data: COMPARISON });
     console.log(`  ${COMPARISON.length} comparison rows`);
@@ -141,7 +143,7 @@ export async function seedPricing(db: PrismaClient = prisma) {
 
   if ((await db.pricingFaq.count()) === 0) {
     await db.pricingFaq.createMany({
-      data: FAQS.map((f, i) => ({ question: f.q, answer: f.a, order: i })),
+      data: FAQS.map((f, i) => ({ question: f.question, answer: f.answer, order: i })),
     });
     console.log(`  ${FAQS.length} FAQs`);
   }
@@ -151,10 +153,9 @@ export async function seedPricing(db: PrismaClient = prisma) {
       data: [
         ...GLOSSARY.map((g, i) => ({ kind: "glossary", title: g.title, body: g.body, order: i })),
         ...TERMS.map((t, i) => ({ kind: "term", title: null, body: t, order: i })),
-        ...EXTERNAL_COSTS.map((t, i) => ({ kind: "external", title: null, body: t, order: i })),
       ],
     });
-    console.log(`  ${GLOSSARY.length} glossary · ${TERMS.length} terms · ${EXTERNAL_COSTS.length} external costs`);
+    console.log(`  ${GLOSSARY.length} glossary · ${TERMS.length} terms`);
   }
 }
 

@@ -95,93 +95,65 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   `/uploads` so attachments render. Verified end-to-end desktop + mobile.
 - **Public Phase 4 (next)**: client login/portal (auth CLIENT role).
 
-## Pricing system (public site: Plans · Business Features & Add-ons · Plan Builder)
-- **Single source of truth is the DATABASE**, never the web apps. `PricingPlan`,
-  `PlanInclusion`, `AddOnCategory`, `AddOn`, `AddOnDependency`, `CapacityUpgrade`,
-  `ComparisonRow`, `PricingFaq`, `PricingTerm`, `BusinessType`, `PlanConfiguration`.
-  Plan cards, comparison table, feature catalogue, Plan Builder, WhatsApp message and
-  the final summary ALL render from it — that is what stops them contradicting.
-  **Never hardcode a price, limit or eligibility rule in `public/` or `web/`.**
-- **`server/src/lib/pricing.ts` is the engine** — pure, no Prisma/Express, so the public
-  app can mirror it and get identical numbers. `quote(catalogue, selection)` resolves:
-  dependency auto-add (recursive) · Premium-required plan escalation with a visible
-  reason · included-vs-charged against the FINAL plan (no duplicate charges) · capacity
-  above allowance · monthly/one-time/external/quotation split · plan recommendation.
-  Totals are DERIVED, never stored (same rule as `calc.ts`).
-- **Recommendations never lie**: `kind` is `saves` | `same` | `unlocks`. With current
-  prices Premium is never strictly cheaper than a Standard stack (Premium's $10 gap vs
-  ~$8 of included value), so it surfaces as `unlocks` — "for $2/month more" — not as a saving.
-- Seed: `npm run db:seed:pricing` (idempotent — upserts by key, only creates editable
-  content when empty, so admin edits survive). `PRICING_RESEED=true` forces a reset.
-  Defaults live in `prisma/pricingData.ts`; 3 plans, 71 add-ons, 6 categories.
-- **Tests: `npm run test:pricing`** — the spec's 9 scenarios + dependency/duplicate-charge
-  rules against the real catalogue. 40 assertions, no test framework. Run after any
-  pricing change.
-- Public API (unauthenticated, mounted BEFORE `requireAuth`): `GET /api/public/pricing/
-  catalogue`, `POST /api/public/pricing/quote`, `POST /api/public/pricing/configurations`.
-  Submissions are **re-priced server-side** — a browser total is never trusted. Creates a
-  `PlanConfiguration` (+ CRM `Lead` when an active salesperson exists) with a snapshot
-  breakdown so later price changes never rewrite what the customer was shown.
-- **Phase A — DONE** (model, engine, seed, tests, public API).
-- **Phase B — DONE** (Plans page + plan cards from the DB). `public/src/lib/catalogue.ts`
-  types the `/catalogue` payload, fetches it **once per page load** (shared promise) and
-  exposes `useCatalogue()` + display helpers (`priceLabel`, `addOnPrice`, `inclusionsFor`,
-  `coreVariants`). `PlanCard` now takes a `CataloguePlan`: DB price/`priceIsFrom`/`priceNote`,
-  heading, `ctaLabel`, `addOnHint`, and a **booking/store toggle** on plans whose inclusions
-  differ by core system (so a Standard card never lists booking *and* store features).
-  Plans page: cards, comparison table (columns generated from the plans themselves, `note`
-  under the label, "Included"/"Not available" → check/dash), external costs and terms — all
-  from the DB. Home renders the same cards + the entry price. On fetch failure the pages show
-  a WhatsApp fallback and **never invent a price**. Removed `PLANS`/`Plan` from `content.ts`;
-  the FAQ page now shows general Qs from `content.ts` + **pricing Qs and the glossary from the
-  DB** (the static ones that hardcoded limits/eligibility were deleted).
-- **Phase C — DONE** (Business features & add-ons catalogue). `BusinessSystems.tsx` renders all
-  **55 sellable add-ons** from the DB with **search + category chips** (counts per category).
-  The 16 `bundled` sub-features that ship inside a parent get **no card** — they aren't sold
-  separately — but search still finds them *through* the parent (`matches()` searches name,
-  blurb, bestFor, `includes`, the parent's bundled children, and the category name; all words
-  must match). Card badges come from `addOnBadges()` in `lib/catalogue.ts`: Popular · "Included
-  with Premium" (`includedInPlans`) · "Standard or above" (`minPlan`, suppressed when it's the
-  lowest plan, when the add-on is already included in that plan, or when the item is bundled) ·
-  dependency notes (the DB's own sentence when set, else generated — `coreRequirementLabel`
-  uses the short "a booking system or an online store" form for two-part requirements).
-  Prices via `addOnPrice()` (monthly / one-time / "By quotation" / "Included"). Cards use the
-  **category** icon (add-on `icon` is null in seed data) with a `sparkle` fallback.
-  Home's module grid is now the 6 **categories** with a live "N features · from $X/month".
-  `content.ts` lost MODULES/EXTRA_MODULES/CHARGED_SEPARATELY — it now holds only price-free
-  brand copy (TRUST, STEPS, PROJECTS, general FAQ, CONTACT).
-  Feature cards link to `/start?feature=<addOnKey>`; `Start.tsx` resolves those keys to **names
-  via the catalogue** (never from the URL text) into "Anything else you need?", de-duplicating
-  so a re-mount or saved draft can't list a feature twice. The old `?module=` prefill still works.
-- **Phase D — DONE** (Plan Builder, `/builder`, `public/src/pages/Builder.tsx`).
-  **The public app does not copy the engine — it imports it.** `public/vite.config.ts` aliases
-  `@engine` → `../server/src/lib/pricing.ts` (+ `server.fs.allow: [".."]`, matching `paths` in
-  `public/tsconfig.json`; Docker `COPY . .` runs before the public build, so it resolves in
-  production too). `src/lib/quote.ts` adapts the API payload to the engine's shape
-  (`toEngineCatalogue` — the API nests a plan's allowances under `included`), and exposes
-  `priceSelection`, `allowanceFor` and `quoteMessage` (the WhatsApp text, built from the quote).
-  **Verified parity: 10 selections, client vs `POST /quote`, byte-identical JSON** — covering
-  escalation, recursive auto-add, capacity, quotation items, one-time work and a blocked
-  selection. Builder steps: plan → core system → capacity steppers (allowance-aware, respect
-  `maxSteps`) → features by category → contact + submit. The summary shows every decision the
-  engine made *for* the customer (escalations, auto-added dependencies, issues), the monthly /
-  one-time / included / quotation / external groups, and the recommendation with a switch
-  button. Mobile gets a sticky total bar (`.builder-bar`, padded clear of the WhatsApp FAB).
-  Plan-card CTAs and feature-card CTAs now open the builder (`?plan=`, `?feature=`).
-- **Two bugs found and fixed while verifying Phase D** (both in Phase A code):
-  1. `recommend()` offered a **downgrade to a plan that cannot do what was asked**: pricing a
-     booking setup against Basic silently dropped the core system, so "$10/month" looked like a
-     $10 saving. `priced()` now rejects an alternative whose resolved `coreSystem` differs from
-     the requested one. Covered by 2 new assertions (**42 total**).
-  2. Both public routers shared **one rate-limit bucket across every limiter in the file**, so a
-     burst of cheap `/quote` calls (or file uploads in `public.ts`) used up the 10/min budget for
-     actually submitting. Each limiter now owns its bucket.
-- Verified end-to-end: `CFG-202607-001` ($41/mo — Standard + booking, Loyalty auto-adding
-  Customer Accounts, SMS Reminders, +30 services $6) is stored with its full breakdown snapshot.
-  **No Lead was created because this DB has no Salesperson rows** — the documented fallback
-  (the configuration is never lost); leads will start being created once a salesperson exists.
-  Test row to delete later: `CFG-202607-001` "[Test] Phase D Check".
-- Phases E–G (Help Me Choose, admin pricing editor, mobile pass) are next.
+## Pricing system (public site: Pricing · Feature Packs · Builder · Help Me Build)
+- **The model is ADDITIVE** (rebuilt from scratch on branch `pricing-v2`, replacing the old
+  Basic/Standard/Premium plans): `monthly total = base website + core systems + feature packs`.
+  Every customer starts on the **$10 base website**. **Booking +$10** and **E-commerce +$10** are
+  priced in their own right, so both together cost exactly $20 *by construction* — there is no
+  combined price to keep in step, and adding the second system later costs exactly what it costs
+  alone. **Six flat $5 feature packs** replace 71 individual add-ons; related capability lives in
+  exactly one pack, which is what removes overlap and double charging.
+- **The $60 maximum is DERIVED, never asserted**: `maxStandardMonthly()` = base + every system +
+  every pack. A test selects *literally everything* (both systems, six packs, all one-time
+  services, all external costs) and asserts the monthly total is still $60 — which simultaneously
+  proves one-time and external costs can never leak into a monthly total.
+- **Single source of truth is the DATABASE**, never the web apps. `BaseWebsite`+`BaseInclusion`,
+  `CoreSystem`+`SystemInclusion`+`SystemLimit`, `FeaturePack`+`PackFeature`, `OneTimeService`,
+  `ExternalCost`, `ComparisonRow`, `RecommendedSetup`, `PricingFaq`, `PricingTerm`,
+  `PricingContent`, `BusinessType`, `PlanConfiguration`.
+  **Never hardcode a price, limit, eligibility rule or pricing heading in `public/` or `web/`.**
+- **`server/src/lib/pricing.ts` is the engine** — pure, no Prisma/Express, so the public app
+  **imports the very same module** (vite alias `@engine` → `../server/src/lib/pricing.ts`, mirrored
+  in `public/tsconfig.json` paths; Docker `COPY . .` precedes the public build so it resolves in
+  production). Not a copy — there is no second implementation to drift.
+  `quote(catalogue, selection)` resolves: duplicate systems/packs charged once · packs needing a
+  system the customer lacks → an **`unmet` entry naming the fix and its price**, never a bare error
+  · limits (`Capacity & Scale` is the pack flagged `raisesLimits`, lifting every limit at once) ·
+  monthly / one-time / external split. `packsLostWithout()` answers "what dies if I remove this
+  system" so removal can ask first. Totals are DERIVED, never stored.
+- **`SystemLimit` holds `baseValue` + `upgradedValue`** — one pack raises services 30→100, staff
+  3→10 and products 50→250 together, instead of charging per dimension.
+- Seed: `npm run db:seed:pricing` (idempotent — upserts by key, editable content only created when
+  empty, so admin edits survive). `PRICING_RESEED=true` forces a reset; `PRICING_SEED_IF_EMPTY=true`
+  (used by the production start command) fills an unseeded DB and no-ops otherwise.
+- **Tests: `npm run test:pricing`** — every scenario in §32 of the spec against the real catalogue:
+  $10 / $20 / $20 / $30 / $35 / $40 / $60, dependency offers, removal warnings, duplicates,
+  quotation items, external costs, and the worked examples priced from their own contents.
+  **73 assertions.** Run after any pricing change.
+- Public API (unauthenticated, before `requireAuth`): `GET /api/public/pricing/catalogue`,
+  `POST /quote`, `POST /configurations`. Submissions are **re-priced server-side** and rejected if
+  any requirement is unmet; the stored `breakdown` is an immutable snapshot.
+  **Verified parity: 12 selections, browser vs `/quote`, byte-identical JSON.**
+- **Public pages**: `/plans` (Pricing — four starting options showing their arithmetic, comparison,
+  worked examples, one-time + external + terms), `/business-systems` (Feature Packs — search,
+  filters, expandable detail), `/builder`, `/help-me-build` (questionnaire — one question per system
+  and per pack, generated from the catalogue with wording in `PricingContent`).
+- **The customer's selection lives in `public/src/lib/configuration.tsx`** (context + localStorage),
+  never in a page, so choices survive moving between Pricing, Feature Packs and the builder (§22).
+  Start Over confirms; removing a system confirms and names the packs that would go.
+- **Admin**: `web/src/pages/Pricing.tsx` (`/pricing`, gated to `settings`) edits *everything* — base,
+  systems + limits + inclusion lists, packs + compatibility + contents, one-time, external,
+  comparison, examples, FAQ, terms, and page text including the questionnaire's questions. The
+  derived maximum is shown at the top so an edit that moves the ceiling is visible as it is made.
+  Verified: setting a pack to $7 immediately prices booking+loyalty at $27 and the maximum at $62.
+- **Admin**: `web/src/pages/WebsiteRequests.tsx` (`/sales/website-requests`) reads submitted
+  configurations — needed because a configuration is stored even when there is no salesperson to
+  raise a lead from. Shows the snapshot, not today's prices. Configurations sent under the old plan
+  model still open and are labelled as such.
+- **Gotcha**: a pack always needs at least one core system — an informational-only website cannot
+  take packs. `Inventory & Suppliers` and `Delivery & Tracking` additionally require E-commerce.
+- Sample/test rows to delete: `CFG-202607-001` (old model) and `CFG-202607-002` `[Test] Full Build`.
+
 
 ## Sales module (commission-only sales team)
 - **Roles**: added `SALESPERSON` + `MANAGER` to `lib/perms.ts` with new sales sections.
@@ -223,14 +195,18 @@ calculations; the broken spreadsheet formulas are NOT copied, business rules are
   Payment Promised) on the invoice. Wired into Alerts + client-profile Invoices tab.
 - **Deploy — LIVE** at https://website-tracker-tvd8.onrender.com (see the Stack section for how it
   builds and seeds). Single Render web service, same origin: public site `/`, admin `/app`, API
-  `/api`. Auto-deploys on push to `main`. Verified live after the Phase D push: 3 plans, 6
-  categories, 71 add-ons, 15 comparison rows, 16 FAQs, 8 business types, and `/quote` returning
-  $30/mo with Customer Accounts auto-added for Standard + booking + Loyalty.
+  `/api`. Auto-deploys on push to `main`.
   **Watch out:** the first deploys served empty pricing pages because production had the migrated
   tables but no catalogue — dev and production are separate Neon branches, and only dev had ever
   been seeded. Check production data, not just a green build, after any phase that adds tables.
+- **LIVE SITE IS STILL ON THE OLD PLAN MODEL.** The pricing rebuild lives on branch
+  **`pricing-v2`** (not merged, deliberately: pushing to `main` deploys in ~90s). Merging it will
+  drop the old plan tables in **production** and seed the new catalogue on boot. Before merging:
+  decide what happens to `PricingPlan`/`AddOn` data in production (the migration deletes the old
+  catalogue content and the comparison/FAQ/term rows), and re-check the site after the deploy.
+  The shared **dev** branch has already been migrated, so old code no longer runs against it.
 - **Still deferred (need external accounts)**: automated email/WhatsApp *API* sending (current flow
   is manual-send, which is what the spec's review-before-send asks for), cloud file storage for
   receipt uploads, full .xlsx (vs CSV) import/export.
-- Sample/test data to delete: C002/C003 `[Sample]`; C004 Acme Bakery + C005 Olive Grove (import test);
+- Sample/test data to delete: website requests CFG-202607-001 + CFG-202607-002 [Test]; C002/C003 `[Sample]`; C004 Acme Bakery + C005 Olive Grove (import test);
   a `dev@test.local` DEVELOPER user; generated Aug-2026 invoices + a partial test payment.

@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
 // The pricing catalogue, as served by GET /api/public/pricing/catalogue.
 //
-// Every price, limit and eligibility rule the public site shows comes from
-// here — the database is the single source of truth. Nothing in public/ may
-// hardcode a price, a plan limit or an "included with" rule.
+// Every price, limit, inclusion, eligibility rule and piece of pricing copy the
+// public site shows comes from here — the database is the single source of
+// truth. Nothing in public/ may hardcode a price, a limit, a rule or a heading.
 //
 // The payload is small and identical for every visitor, so it is fetched once
 // per page load and shared by every component that needs it.
@@ -12,116 +12,117 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
-export type CoreSystem = "booking" | "store" | "both";
-export type PricingType = "monthly" | "onetime" | "quote" | "external" | "bundled";
-export type CoreSystemMode = "none" | "choose-one" | "one-included-both-available";
-
-export interface PlanInclusion {
-  label: string;
-  /** null = applies to the whole plan; "booking"/"store" = only that variant. */
-  coreSystem: string | null;
-}
-
-export interface CataloguePlan {
+export interface BaseWebsite {
   key: string;
   name: string;
   heading: string;
   description: string;
-  bestFor: string | null;
-  basePrice: number;
-  priceIsFrom: boolean;
-  priceNote: string;
   ctaLabel: string;
-  addOnHint: string | null;
-  coreSystemMode: CoreSystemMode;
-  bothSystemsPrice: number | null;
-  included: {
-    sections: number | null;
-    updates: number;
-    products: number | null;
-    services: number | null;
-    staff: number | null;
-    locations: number;
-  };
-  popular: boolean;
-  order: number;
-  inclusions: PlanInclusion[];
+  price: number;
+  priceNote: string;
+  includedSections: number;
+  monthlyUpdates: number;
+  inclusions: string[];
 }
 
-export interface CatalogueCategory {
+export interface SystemLimit {
   key: string;
-  name: string;
-  blurb: string | null;
-  icon: string | null;
-}
-
-export interface CatalogueDependency {
-  requiresType: "addon" | "coreSystem";
-  requiresKey: string;
-  note: string | null;
-}
-
-export interface CatalogueAddOn {
-  key: string;
-  categoryKey: string;
-  name: string;
-  blurb: string | null;
-  bestFor: string | null;
-  icon: string | null;
-  includes: string[];
-  pricingType: PricingType;
-  price: number | null;
-  priceIsFrom: boolean;
-  priceLabel: string | null;
-  minPlan: string;
-  includedInPlans: string[];
-  bundledWith: string | null;
-  recommendedFor: string[];
-  popular: boolean;
-  dependencies: CatalogueDependency[];
-}
-
-export interface CatalogueCapacity {
-  key: string;
-  name: string;
+  label: string;
   unitLabel: string;
-  stepSize: number;
-  pricePerStep: number;
-  maxSteps: number | null;
-  appliesToPlans: string[];
-  requiresCoreSystem: string | null;
+  baseValue: number;
+  upgradedValue: number;
   helpText: string | null;
+}
+
+export interface CoreSystem {
+  key: string; // booking | store
+  name: string;
+  shortName: string;
+  heading: string;
+  description: string;
+  ctaLabel: string;
+  price: number;
+  icon: string | null;
+  order: number;
+  inclusions: { label: string; group: string | null }[];
+  limits: SystemLimit[];
+}
+
+export interface FeaturePack {
+  key: string;
+  name: string;
+  blurb: string;
+  description: string;
+  price: number;
+  icon: string | null;
+  /** Systems the pack cannot work without. Empty = any system will do. */
+  requiresSystems: string[];
+  compatibleSystems: string[];
+  requiresReason: string | null;
+  raisesLimits: boolean;
+  recommendedFor: string[];
+  order: number;
+  features: { label: string; group: string | null }[];
+}
+
+export interface OneTimeService {
+  key: string;
+  name: string;
+  description: string | null;
+  category: string; // website | content | data | custom
+  startingPrice: number | null;
+  isQuote: boolean;
+}
+
+export interface ExternalCost {
+  key: string;
+  name: string;
+  description: string | null;
+  provider: string | null;
+  costType: string; // fixed | estimated | usage
 }
 
 export interface ComparisonRow {
   label: string;
-  basic: string;
-  standard: string;
-  premium: string;
+  informational: string;
+  booking: string;
+  store: string;
+  both: string;
   note: string | null;
+}
+
+export interface RecommendedSetup {
+  key: string;
+  name: string;
+  description: string | null;
+  systemKeys: string[];
+  packKeys: string[];
+  icon: string | null;
 }
 
 export interface BusinessType {
   key: string;
   name: string;
   icon: string | null;
-  recommendedPlan: string;
-  recommendedCore: string | null;
-  priorityCategories: string[];
-  priorityAddOns: string[];
+  recommendedSystems: string[];
+  priorityPacks: string[];
 }
 
 export interface Catalogue {
-  plans: CataloguePlan[];
-  categories: CatalogueCategory[];
-  addOns: CatalogueAddOn[];
-  capacity: CatalogueCapacity[];
+  base: BaseWebsite | null;
+  systems: CoreSystem[];
+  packs: FeaturePack[];
+  oneTime: OneTimeService[];
+  external: ExternalCost[];
   comparison: ComparisonRow[];
+  setups: RecommendedSetup[];
   faqs: { question: string; answer: string }[];
   glossary: { title: string; body: string }[];
   terms: string[];
-  externalCosts: string[];
   businessTypes: BusinessType[];
+  /** Editable copy, keyed. Never hold a heading in the app. */
+  content: Record<string, string>;
+  maxStandardMonthly: number;
 }
 
 // One request per page load, shared by every caller.
@@ -146,16 +147,16 @@ export function useCatalogue() {
     loadCatalogue()
       .then((c) => {
         if (!live) return;
-        // A reachable API with an empty catalogue is still nothing to price
-        // from — e.g. a database that has the tables but was never seeded.
-        // Say so, rather than rendering a pricing page with no prices in it.
-        if (!c.plans.length) {
-          setError("Our plans could not be loaded right now.");
+        // A reachable API with no base website is nothing we can price from —
+        // e.g. a database that has the tables but was never seeded. Say so
+        // rather than rendering a pricing page with no prices in it.
+        if (!c.base || !c.systems.length) {
+          setError("Our pricing could not be loaded right now.");
           return;
         }
         setCatalogue(c);
       })
-      .catch(() => live && setError("Our plans could not be loaded right now."));
+      .catch(() => live && setError("Our pricing could not be loaded right now."));
     return () => {
       live = false;
     };
@@ -166,123 +167,126 @@ export function useCatalogue() {
 
 // ---- display helpers -------------------------------------------------------
 
-/** $10 · From $30 — never rounds a price the customer will be charged. */
-export function priceLabel(amount: number, isFrom?: boolean): string {
+/** $10 · +$5 — never rounds a price the customer will be charged. */
+export function priceLabel(amount: number, plus?: boolean): string {
   const n = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-  return `${isFrom ? "From " : ""}$${n}`;
+  return `${plus ? "+" : ""}$${n}`;
 }
 
-/** What an add-on costs, in the words the catalogue chose. */
-export function addOnPrice(a: CatalogueAddOn): string {
-  if (a.priceLabel) return a.priceLabel;
-  if (a.pricingType === "quote") return "By quotation";
-  if (a.pricingType === "external") return "Paid to the provider";
-  if (a.pricingType === "bundled") return "Included";
-  if (a.price == null) return "By quotation";
-  const base = priceLabel(a.price, a.priceIsFrom);
-  return a.pricingType === "onetime" ? `${base} one-time` : `${base}/month`;
+/** What a one-time service costs, or that it has to be quoted. */
+export function oneTimePrice(s: OneTimeService): string {
+  if (s.isQuote || s.startingPrice == null) return "Requires quotation";
+  return `From ${priceLabel(s.startingPrice)} one-time`;
 }
 
-/** A plan's customer-facing name, or its key if it has been retired. */
-export function planName(cat: Catalogue, key: string): string {
-  return cat.plans.find((p) => p.key === key)?.name ?? key;
+/** Copy from the database, with a safe fallback if a key was removed. */
+export function text(cat: Catalogue | null, key: string, fallback = ""): string {
+  return cat?.content[key] ?? fallback;
 }
 
-/** The lowest plan in the catalogue — an add-on requiring it needs no badge. */
-export function lowestPlanKey(cat: Catalogue): string | undefined {
-  return [...cat.plans].sort((a, b) => a.order - b.order)[0]?.key;
+/** "Booking and E-commerce Website" — how a set of systems is named. */
+export function websiteTypeName(cat: Catalogue, systemKeys: string[]): string {
+  if (!systemKeys.length) return "Informational Website";
+  const names = cat.systems
+    .filter((s) => systemKeys.includes(s.key))
+    .sort((a, b) => a.order - b.order)
+    .map((s) => s.shortName);
+  return `${names.join(" and ")} Website`;
 }
 
-export type BadgeTone = "popular" | "included" | "plan" | "needs";
-export interface AddOnBadge {
-  label: string;
-  tone: BadgeTone;
+/** The four starting options on the Pricing page, priced from the catalogue. */
+export interface StartingOption {
+  key: string;
+  systemKeys: string[];
+  name: string;
+  description: string;
+  ctaLabel: string;
+  price: number;
+  icon: string | null;
 }
 
-/**
- * Everything a customer must know before choosing an add-on: which plan it
- * needs, what it already comes with, and what else it depends on. Built here
- * so the catalogue page, the Plan Builder and the summary all say the same
- * thing — the rules themselves live in the database.
- */
-export function addOnBadges(cat: Catalogue, a: CatalogueAddOn): AddOnBadge[] {
-  const badges: AddOnBadge[] = [];
-  const byKey = new Map(cat.addOns.map((x) => [x.key, x]));
+export function startingOptions(cat: Catalogue): StartingOption[] {
+  const base = cat.base!;
+  const systems = [...cat.systems].sort((a, b) => a.order - b.order);
+  const options: StartingOption[] = [
+    {
+      key: "informational",
+      systemKeys: [],
+      name: "Informational Website",
+      description: base.description,
+      ctaLabel: base.ctaLabel,
+      price: base.price,
+      icon: "globe",
+    },
+  ];
 
-  if (a.popular) badges.push({ label: "Popular", tone: "popular" });
-
-  // A bundled feature is never bought — it arrives with its parent, or, when it
-  // has no parent, with the plan itself. Either way the plan badge would only
-  // repeat what this already says.
-  const bundled = a.pricingType === "bundled";
-  if (bundled) {
-    const parent = a.bundledWith ? byKey.get(a.bundledWith)?.name : null;
-    badges.push({
-      label: parent ? `Comes with ${parent}` : `Comes with ${planName(cat, a.minPlan)} and above`,
-      tone: "included",
+  for (const s of systems) {
+    options.push({
+      key: s.key,
+      systemKeys: [s.key],
+      name: `${s.shortName} Website`,
+      description: s.description,
+      ctaLabel: s.ctaLabel,
+      price: base.price + s.price,
+      icon: s.icon,
     });
   }
 
-  if (a.includedInPlans.length) {
-    badges.push({
-      label: `Included with ${a.includedInPlans.map((k) => planName(cat, k)).join(" and ")}`,
-      tone: "included",
+  if (systems.length > 1) {
+    const all = systems.map((s) => s.key);
+    options.push({
+      key: "both",
+      systemKeys: all,
+      name: systems.map((s) => s.shortName).join(" and "),
+      description:
+        "Everything in both systems, managed from one dashboard with a single login.",
+      ctaLabel: "Build Both Systems",
+      price: base.price + systems.reduce((sum, s) => sum + s.price, 0),
+      icon: "sparkle",
     });
   }
 
-  // "Standard or above" is only worth saying when it rules a plan out.
-  if (!bundled && a.minPlan !== lowestPlanKey(cat) && !a.includedInPlans.includes(a.minPlan)) {
-    badges.push({ label: `${planName(cat, a.minPlan)} or above`, tone: "plan" });
-  }
+  return options;
+}
 
-  for (const d of a.dependencies) {
-    if (d.note) badges.push({ label: d.note, tone: "needs" });
-    else if (d.requiresType === "coreSystem") {
-      badges.push({ label: `Needs ${coreRequirementLabel(d.requiresKey)}`, tone: "needs" });
-    } else {
-      badges.push({ label: `Needs ${byKey.get(d.requiresKey)?.name ?? d.requiresKey}`, tone: "needs" });
-    }
-  }
-
-  return badges;
+/** The systems a pack would need added, given what is currently selected. */
+export function missingSystemsFor(
+  cat: Catalogue,
+  pack: FeaturePack,
+  systemKeys: string[]
+): CoreSystem[] {
+  if (packIsUsable(pack, systemKeys)) return [];
+  const wanted = pack.requiresSystems.length
+    ? pack.requiresSystems
+    : cat.systems.map((s) => s.key);
+  return cat.systems.filter((s) => wanted.includes(s.key) && !systemKeys.includes(s.key));
 }
 
 /**
- * "store" → "an online store or ordering system"
- * "booking|store" → "a booking system or an online store" (the short form, so
- * a two-part requirement doesn't read as three "or"s).
+ * Mirrors the engine's `packIsAvailable`. Kept here too so a card can be
+ * rendered as unavailable without pricing a whole quote for it.
  */
-export function coreRequirementLabel(requiresKey: string): string {
-  const parts = requiresKey.split("|");
-  const label = (k: string) =>
-    k === "booking"
-      ? "a booking system"
-      : parts.length > 1
-      ? "an online store"
-      : "an online store or ordering system";
-  return parts.map(label).join(" or ");
-}
-
-/** Sub-features that ship inside an add-on rather than being bought separately. */
-export function bundledInto(cat: Catalogue, key: string): CatalogueAddOn[] {
-  return cat.addOns.filter((a) => a.pricingType === "bundled" && a.bundledWith === key);
-}
-
-/** Inclusions for one variant of a plan: the shared ones plus that core's. */
-export function inclusionsFor(plan: CataloguePlan, core: string | null): string[] {
-  return plan.inclusions
-    .filter((i) => i.coreSystem == null || i.coreSystem === core)
-    .map((i) => i.label);
-}
-
-/** The core systems a plan's inclusion list actually distinguishes. */
-export function coreVariants(plan: CataloguePlan): string[] {
-  const seen: string[] = [];
-  for (const i of plan.inclusions) {
-    if (i.coreSystem && !seen.includes(i.coreSystem)) seen.push(i.coreSystem);
+export function packIsUsable(pack: FeaturePack, systemKeys: string[]): boolean {
+  if (systemKeys.length === 0) return false;
+  if (pack.requiresSystems.length && !pack.requiresSystems.some((k) => systemKeys.includes(k))) {
+    return false;
   }
-  return seen;
+  if (pack.compatibleSystems.length && !systemKeys.some((k) => pack.compatibleSystems.includes(k))) {
+    return false;
+  }
+  return true;
 }
 
-export const coreSystemName = (key: string): string =>
-  key === "booking" ? "Booking system" : key === "store" ? "Online store" : key;
+/** How a pack's compatibility reads on a card: "Available with E-commerce". */
+export function compatibilityLabel(cat: Catalogue, pack: FeaturePack): string {
+  const names = (keys: string[]) =>
+    cat.systems.filter((s) => keys.includes(s.key)).map((s) => s.shortName);
+
+  if (pack.requiresSystems.length) {
+    return `Requires ${names(pack.requiresSystems).join(" or ")}`;
+  }
+  if (pack.compatibleSystems.length) {
+    return `Available with ${names(pack.compatibleSystems).join(" or ")}`;
+  }
+  return `Available with any system`;
+}

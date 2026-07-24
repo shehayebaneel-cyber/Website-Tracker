@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/icons";
 import { waLink } from "../data/content";
-import { loadCatalogue } from "../lib/catalogue";
+import { loadCatalogue, startingOptions, useCatalogue } from "../lib/catalogue";
 
 type Dict = Record<string, boolean>;
 interface Form {
@@ -65,20 +65,26 @@ export default function Start() {
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const toggle = (field: "needs" | "hasContent", key: string) => setForm((f) => ({ ...f, [field]: { ...f[field], [key]: !f[field][key] } }));
 
+  // The website types on offer, straight from the catalogue.
+  const { catalogue } = useCatalogue();
+  const websiteTypes = catalogue
+    ? startingOptions(catalogue).map((o) => ({ key: o.key, label: o.name.replace(" Website", "") }))
+    : [];
+
   // prefill plan + referral from URL
   useEffect(() => {
     const plan = params.get("plan"); const mod = params.get("module"); const ref = params.get("ref");
     if (plan) set("plan", plan);
     if (mod) set("needs", { ...form.needs, [mod]: true });
 
-    // ?feature=<addOnKey> — arrives from a feature card. The catalogue owns the
-    // name, so the form asks for it rather than trusting the URL's text.
+    // ?feature=<packKey> — arrives from a feature-pack card. The catalogue owns
+    // the name, so the form asks for it rather than trusting the URL's text.
     const features = params.getAll("feature");
     if (features.length) {
       loadCatalogue()
         .then((cat) => {
           const names = features
-            .map((k) => cat.addOns.find((a) => a.key === k)?.name)
+            .map((k) => cat.packs.find((p) => p.key === k)?.name)
             .filter((n): n is string => Boolean(n));
           if (names.length) {
             setForm((f) => {
@@ -187,10 +193,15 @@ export default function Start() {
                   <Toggle on={form.needType === "redesign"} onClick={() => set("needType", "redesign")}>Redesign</Toggle>
                 </div>
               </F>
-              <F label="Which plan are you interested in?">
-                <div className="grid grid-cols-3 gap-2">
-                  {["basic", "standard", "premium"].map((p) => <Toggle key={p} on={form.plan === p} onClick={() => set("plan", p)}>{p[0].toUpperCase() + p.slice(1)}</Toggle>)}
+              {/* The website types come from the catalogue, so this form can
+                  never offer something the pricing pages no longer sell. */}
+              <F label="What kind of website do you need?">
+                <div className="grid grid-cols-2 gap-2">
+                  {websiteTypes.map((t) => (
+                    <Toggle key={t.key} on={form.plan === t.key} onClick={() => set("plan", t.key)}>{t.label}</Toggle>
+                  ))}
                 </div>
+                <div className="hint">Not sure? <Link to="/help-me-build" style={{ color: "var(--orange)" }}>Answer a few questions</Link> and we'll suggest one.</div>
               </F>
               <div>
                 <div className="lbl">What do you need? <span style={{ fontWeight: 400, color: "var(--muted)" }}>(pick any)</span></div>
@@ -324,7 +335,7 @@ function Review({ form }: { form: Form }) {
   const needs = Object.keys(form.needs).filter((k) => form.needs[k]);
   const rows: [string, string][] = [
     ["Business", form.businessName], ["Category", form.category], ["Contact", form.contactPerson],
-    ["Phone", form.phone || form.whatsapp], ["City", form.city], ["Plan", form.plan ? form.plan[0].toUpperCase() + form.plan.slice(1) : "—"],
+    ["Phone", form.phone || form.whatsapp], ["City", form.city], ["Website type", form.plan ? form.plan[0].toUpperCase() + form.plan.slice(1).replace("both","Booking + E-commerce") : "—"],
     ["Type", form.needType === "redesign" ? "Redesign" : "New website"], ["Needs", needs.length ? needs.join(", ") : "—"],
     ["Files", form.files.length ? `${form.files.length} uploaded` : "—"], ["Launch", form.launchTimeline || "—"],
   ];

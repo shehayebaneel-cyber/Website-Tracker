@@ -1,11 +1,14 @@
 // ---------------------------------------------------------------------------
-// Plan Builder — the customer assembles their system and sees the price move.
+// The guided website builder.
 //
-// Every rule applied here (what a plan includes, what an add-on depends on,
-// which add-on forces a higher plan, what is charged versus already covered)
-// comes from the pricing engine the SERVER prices with, running against the
-// catalogue this page fetched. The estimate on screen and the price stored on
-// submission are produced by the same code — the server re-prices anyway.
+// Every rule applied here — what a system includes, which packs a system can
+// run, what a pack costs, what the limits become — comes from the pricing
+// engine the SERVER prices with, running against the catalogue this page
+// fetched. The estimate on screen and the price stored on submission are
+// produced by the same code, and the server re-prices anyway.
+//
+// The customer's choices live in the shared configuration, not in this
+// component, so wandering off to read a pack's details never loses them.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from "react";
@@ -13,92 +16,105 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/icons";
 import { LoadError, SectionHeading } from "../components/ui";
 import { waLink } from "../data/content";
+import { useConfiguration } from "../lib/configuration";
 import {
-  addOnBadges,
-  addOnPrice,
+  compatibilityLabel,
+  missingSystemsFor,
+  oneTimePrice,
+  packIsUsable,
   priceLabel,
+  text,
   useCatalogue,
+  websiteTypeName,
   type Catalogue,
-  type CatalogueAddOn,
+  type CoreSystem,
+  type FeaturePack,
 } from "../lib/catalogue";
-import { allowanceFor, priceSelection, quoteMessage, type CoreSystem, type Quote } from "../lib/quote";
-
-interface Contact {
-  contactName: string;
-  businessName: string;
-  phone: string;
-  email: string;
-  businessType: string;
-  notes: string;
-  website: string; // honeypot
-}
-
-const EMPTY_CONTACT: Contact = {
-  contactName: "", businessName: "", phone: "", email: "", businessType: "", notes: "", website: "",
-};
+import { packsLostWithout, priceSelection, quoteMessage, type Quote } from "../lib/quote";
+import { useMediaQuery } from "../lib/useMediaQuery";
 
 export default function Builder() {
   const { catalogue, loading, error } = useCatalogue();
+  const { config, setInfo, addSystem, removeSystem, togglePack, addPacks, toggleOneTime, reset } =
+    useConfiguration();
   const [params] = useSearchParams();
 
-  const [planKey, setPlanKey] = useState<string | null>(null);
-  const [coreSystem, setCoreSystem] = useState<CoreSystem | null>(null);
-  const [capacities, setCapacities] = useState<Record<string, number>>({});
-  const [selected, setSelected] = useState<string[]>([]);
-  const [contact, setContact] = useState<Contact>(EMPTY_CONTACT);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ reference: string; monthlyTotal: number; oneTimeTotal: number; needsQuotation: boolean } | null>(null);
+  const [done, setDone] = useState<Done | null>(null);
+  const [step, setStep] = useState(0);
+  const compact = useMediaQuery("(max-width: 1023px)");
 
-  // Start on the plan the customer arrived with, else the popular one.
+  // Prompts the customer must answer, never silent changes to their basket.
+  const [addSystemFor, setAddSystemFor] = useState<{ pack: FeaturePack; systems: CoreSystem[] } | null>(null);
+  const [removeSystemFor, setRemoveSystemFor] = useState<{ system: CoreSystem; lost: FeaturePack[] } | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  // ?feature= arrives from a pack card, ?systems= from a starting option.
   useEffect(() => {
-    if (!catalogue || planKey) return;
-    const wanted = params.get("plan");
-    const start =
-      catalogue.plans.find((p) => p.key === wanted) ??
-      catalogue.plans.find((p) => p.popular) ??
-      catalogue.plans[0];
-    if (start) setPlanKey(start.key);
-    const feature = params.getAll("feature").filter((k) => catalogue.addOns.some((a) => a.key === k));
-    if (feature.length) setSelected((s) => [...new Set([...s, ...feature])]);
-  }, [catalogue, params, planKey]);
+    if (!catalogue) return;
+    const wanted = params.getAll("feature").filter((k) => catalogue.packs.some((p) => p.key === k));
+    if (wanted.length) addPacks(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogue]);
 
   const quote: Quote | null = useMemo(() => {
-    if (!catalogue || !planKey) return null;
-    return priceSelection(catalogue, { planKey, coreSystem, capacities, addOnKeys: selected });
-  }, [catalogue, planKey, coreSystem, capacities, selected]);
+    if (!catalogue) return null;
+    return priceSelection(catalogue, {
+      systemKeys: config.systemKeys,
+      packKeys: config.packKeys,
+      oneTimeKeys: config.oneTimeKeys,
+      externalKeys: config.externalKeys,
+    });
+  }, [catalogue, config]);
 
   if (error) {
     return (
       <section className="section">
         <div className="container" style={{ maxWidth: 720 }}>
-          <LoadError message={error} whatsappText="Hi IGNIS, I'd like help choosing a plan." />
+          <LoadError message={error} whatsappText="Hi IGNIS, I'd like help putting a website together." />
         </div>
       </section>
     );
   }
-  if (loading || !catalogue || !planKey || !quote) {
+  if (loading || !catalogue || !quote) {
     return (
       <section className="section">
         <div className="container"><div className="skeleton" style={{ height: 420 }} /></div>
       </section>
     );
   }
-
   if (done) return <Confirmation done={done} />;
 
-  // The engine may have moved the customer to a higher plan; everything below
-  // is priced against that plan, so it is what the page must reflect.
-  const activePlan = catalogue.plans.find((p) => p.key === quote.planKey)!;
-  const requestedPlan = catalogue.plans.find((p) => p.key === planKey)!;
-  const autoAddedKeys = new Set(quote.autoAdded.map((a) => a.key));
-  const includedKeys = new Set(quote.included.map((l) => l.key));
-  const blocking = quote.issues.filter((i) => i.blocking);
+  const websiteType = websiteTypeName(catalogue, quote.systemKeys);
+  const blocked = quote.unmet.some((u) => u.blocking);
+  const canSubmit = Boolean(config.info.contactName.trim() && config.info.phone.trim()) && !blocked;
 
-  const sellable = catalogue.addOns.filter((a) => !(a.pricingType === "bundled" && a.bundledWith));
+  // Which steps exist right now — "what you already have" only appears once a
+  // system is chosen, so the numbering and the phone's paging follow the same
+  // list rather than two hand-kept ones.
+  const hasSystems = quote.systemKeys.length > 0;
+  const stepKeys = ["info", "type", ...(hasSystems ? ["included"] : []), "packs", "onetime", "send"];
+  const at = (key: string) => stepKeys.indexOf(key);
+  const current = Math.min(step, stepKeys.length - 1);
+  const isHidden = (key: string) => compact && current !== at(key);
 
-  function toggleAddOn(key: string) {
-    setSelected((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]));
+  /** Ask before adding a system on the customer's behalf. */
+  function requestPack(pack: FeaturePack) {
+    if (config.packKeys.includes(pack.key)) return togglePack(pack.key);
+    if (packIsUsable(pack, config.systemKeys)) return togglePack(pack.key);
+    setAddSystemFor({ pack, systems: missingSystemsFor(catalogue!, pack, config.systemKeys) });
+  }
+
+  /** Ask before dropping packs that depend on a system. */
+  function requestRemoveSystem(system: CoreSystem) {
+    // The engine answers with its own leaner pack shape; resolve back to the
+    // catalogue so the prompt can name them the way the customer saw them.
+    const lostKeys = packsLostWithout(catalogue!, config.systemKeys, system.key, config.packKeys)
+      .map((p) => p.key);
+    const lost = catalogue!.packs.filter((p) => lostKeys.includes(p.key));
+    if (!lost.length) return removeSystem(system.key, []);
+    setRemoveSystemFor({ system, lost });
   }
 
   async function submit(e: React.FormEvent) {
@@ -110,17 +126,18 @@ export default function Builder() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          planKey,
-          coreSystem,
-          capacities,
-          addOnKeys: selected,
-          contactName: contact.contactName,
-          businessName: contact.businessName || undefined,
-          phone: contact.phone,
-          email: contact.email || undefined,
-          businessType: contact.businessType || undefined,
-          notes: contact.notes || undefined,
-          website: contact.website,
+          systemKeys: config.systemKeys,
+          packKeys: config.packKeys,
+          oneTimeKeys: config.oneTimeKeys,
+          externalKeys: config.externalKeys,
+          contactName: config.info.contactName,
+          businessName: config.info.businessName || undefined,
+          phone: config.info.phone,
+          email: config.info.email || undefined,
+          businessType: config.info.businessType || undefined,
+          contactMethod: config.info.contactMethod || undefined,
+          notes: config.info.notes || undefined,
+          website: "",
         }),
       });
       const data = await res.json();
@@ -139,9 +156,9 @@ export default function Builder() {
         <div className="container">
           <SectionHeading
             center
-            eyebrow="Plan builder"
-            title="Build your plan and see the price"
-            sub="Pick what your business actually needs. The total updates as you choose, and nothing is charged twice."
+            eyebrow="Website builder"
+            title={text(catalogue, "builder.heading", "Build your website")}
+            sub={text(catalogue, "builder.estimateNote")}
           />
         </div>
       </section>
@@ -149,191 +166,358 @@ export default function Builder() {
       <section className="section">
         <div className="container">
           <div className="builder-grid">
-              {/* ---------------- choices ---------------- */}
-              <div className="flex flex-col gap-10">
-                {/* 1. plan */}
-                <Step n={1} title="Choose your starting plan" hint="You can change this at any time — features that need a bigger plan will say so.">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {catalogue.plans.map((p) => (
+            <div className="flex flex-col gap-10">
+              {/* Phones page through the steps; desktops see them all at once. */}
+              {compact && (
+                <div>
+                  <div className="flex items-center justify-between text-sm" style={{ color: "var(--muted)" }}>
+                    <span>Step {current + 1} of {stepKeys.length}</span>
+                    <span>{priceLabel(quote.monthlyTotal)}/month so far</span>
+                  </div>
+                  <div className="mt-2 flex gap-1" aria-hidden>
+                    {stepKeys.map((k, i) => (
+                      <span key={k} style={{ flex: 1, height: 4, borderRadius: 999, background: i <= current ? "var(--orange)" : "var(--line)" }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 1 — business information */}
+              <Step n={at("info") + 1} hidden={isHidden("info")} title="Tell us about your business" hint="So we can recommend what fits and reach you afterwards.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Business name">
+                    <input className="in" value={config.info.businessName} onChange={(e) => setInfo({ businessName: e.target.value })} />
+                  </Field>
+                  <Field label="Type of business">
+                    <select className="in" value={config.info.businessType} onChange={(e) => setInfo({ businessType: e.target.value })}>
+                      <option value="">Select…</option>
+                      {catalogue.businessTypes.map((b) => <option key={b.key} value={b.name}>{b.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Your name" required>
+                    <input className="in" value={config.info.contactName} onChange={(e) => setInfo({ contactName: e.target.value })} />
+                  </Field>
+                  <Field label="Phone / WhatsApp" required>
+                    <input className="in" inputMode="tel" value={config.info.phone} onChange={(e) => setInfo({ phone: e.target.value })} />
+                  </Field>
+                  <Field label="Email">
+                    <input className="in" type="email" value={config.info.email} onChange={(e) => setInfo({ email: e.target.value })} />
+                  </Field>
+                  <Field label="Preferred contact method">
+                    <select className="in" value={config.info.contactMethod} onChange={(e) => setInfo({ contactMethod: e.target.value })}>
+                      {["WhatsApp", "Phone call", "Email"].map((m) => <option key={m}>{m}</option>)}
+                    </select>
+                  </Field>
+                </div>
+              </Step>
+
+              {/* 2 — website type */}
+              <Step n={at("type") + 1} hidden={isHidden("type")} title="Choose your website type" hint={`The ${priceLabel(catalogue.base!.price)} base website is always included.`}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {catalogue.systems.map((s) => {
+                    const on = config.systemKeys.includes(s.key);
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        onClick={() => (on ? requestRemoveSystem(s) : addSystem(s.key))}
+                        className={`choice ${on ? "on" : ""}`}
+                        style={{ textAlign: "left" }}
+                      >
+                        <span className="box">{on && <Icon.check />}</span>
+                        <span style={{ flex: 1 }}>
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-sm font-semibold">{s.name}</span>
+                            <span className="text-sm font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>
+                              {priceLabel(s.price, true)}/month
+                            </span>
+                          </span>
+                          <span className="hint block" style={{ marginTop: 2 }}>{s.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+                  Currently building: <b style={{ color: "var(--ink)" }}>{websiteType}</b> ·{" "}
+                  {priceLabel(quote.monthlyTotal)}/month
+                </p>
+              </Step>
+
+              {/* 3 — what is already included */}
+              {quote.systemKeys.length > 0 && (
+                <Step n={at("included") + 1} hidden={isHidden("included")} title="What you already have" hint="These are part of your systems — you never pay a pack for them.">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {catalogue.systems
+                      .filter((s) => quote.systemKeys.includes(s.key))
+                      .map((s) => (
+                        <div key={s.key} className="rounded-2xl p-4" style={{ border: "1px solid var(--line)", background: "var(--paper)" }}>
+                          <div className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>{s.name}</div>
+                          <ul className="mt-2 flex flex-col gap-1.5">
+                            {s.inclusions.slice(0, 8).map((i) => (
+                              <li key={i.label} className="flex items-start gap-2 text-sm" style={{ color: "var(--ink-2)" }}>
+                                <Icon.check /> {i.label}
+                              </li>
+                            ))}
+                          </ul>
+                          {s.inclusions.length > 8 && (
+                            <div className="mt-2 text-xs" style={{ color: "var(--muted)" }}>
+                              + {s.inclusions.length - 8} more included
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </Step>
+              )}
+
+              {/* 4 — feature packs */}
+              <Step
+                n={at("packs") + 1}
+                hidden={isHidden("packs")}
+                title="Add feature packs"
+                hint={`Each pack is ${priceLabel(catalogue.packs[0]?.price ?? 5)}/month and groups everything related, so nothing overlaps.`}
+              >
+                {config.systemKeys.length === 0 && (
+                  <p className="mb-3 rounded-xl p-3 text-sm" style={{ background: "var(--cream)", color: "var(--ink-2)" }}>
+                    Feature packs extend a booking or e-commerce system. Choose one above and the packs become available.
+                  </p>
+                )}
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {catalogue.packs.map((p) => {
+                    const on = config.packKeys.includes(p.key);
+                    const usable = packIsUsable(p, config.systemKeys);
+                    return (
                       <button
                         key={p.key}
                         type="button"
-                        onClick={() => setPlanKey(p.key)}
-                        className="flex flex-col rounded-2xl p-4 text-left transition-colors"
-                        style={{
-                          border: `1.5px solid ${planKey === p.key ? "var(--orange)" : "var(--line)"}`,
-                          background: planKey === p.key ? "var(--orange-soft)" : "var(--paper)",
-                        }}
+                        onClick={() => requestPack(p)}
+                        className={`choice ${on ? "on" : ""}`}
+                        style={{ textAlign: "left", opacity: usable || on ? 1 : 0.75 }}
                       >
-                        <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--muted)", fontFamily: "var(--font-display)" }}>{p.name}</span>
-                        <span className="mt-1 font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", color: planKey === p.key ? "var(--orange)" : "var(--ink)" }}>
-                          {priceLabel(p.basePrice, p.priceIsFrom)}
-                          <span className="text-sm font-normal" style={{ color: "var(--muted)" }}>{p.priceNote}</span>
+                        <span className="box">{on && <Icon.check />}</span>
+                        <span style={{ flex: 1 }}>
+                          <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                            <span className="text-sm font-semibold">{p.name}</span>
+                            <span className="text-sm font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>
+                              {priceLabel(p.price, true)}/month
+                            </span>
+                          </span>
+                          <span className="hint block" style={{ marginTop: 2 }}>{p.blurb}</span>
+                          <span className="mt-1.5 flex flex-wrap gap-1.5">
+                            {on && <Tag tone="on">Added to your website</Tag>}
+                            <Tag tone={usable ? "plain" : "needs"}>{compatibilityLabel(catalogue, p)}</Tag>
+                          </span>
                         </span>
-                        <span className="mt-1 text-sm" style={{ color: "var(--ink-2)" }}>{p.heading}</span>
                       </button>
-                    ))}
-                  </div>
-                </Step>
+                    );
+                  })}
+                </div>
+                <Link to="/business-systems" className="mt-3 inline-block text-sm font-semibold" style={{ color: "var(--orange)", fontFamily: "var(--font-display)" }}>
+                  Read what each pack includes →
+                </Link>
+              </Step>
 
-                {/* 2. core system */}
-                {activePlan.coreSystemMode !== "none" && (
-                  <Step n={2} title="What should customers be able to do?" hint="This is the heart of your system.">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <CoreOption on={coreSystem === "booking"} onClick={() => setCoreSystem("booking")} label="Book appointments" note="Services, staff and a schedule." />
-                      <CoreOption on={coreSystem === "store"} onClick={() => setCoreSystem("store")} label="Order or buy" note="Products, cart and orders." />
-                      <CoreOption
-                        on={coreSystem === "both"}
-                        onClick={() => setCoreSystem("both")}
-                        label="Both"
-                        note={
-                          activePlan.coreSystemMode === "one-included-both-available" && activePlan.bothSystemsPrice != null
-                            ? `Adds ${priceLabel(activePlan.bothSystemsPrice)}/month.`
-                            : "Booking and store together."
-                        }
-                        tag={activePlan.coreSystemMode === "choose-one" ? "Needs a bigger plan" : undefined}
-                      />
-                    </div>
-                  </Step>
-                )}
-
-                {/* 3. capacity */}
-                <CapacityStep
-                  n={activePlan.coreSystemMode === "none" ? 2 : 3}
-                  catalogue={catalogue}
-                  planKey={activePlan.key}
-                  coreSystem={quote.coreSystem}
-                  capacities={capacities}
-                  setCapacities={setCapacities}
-                />
-
-                {/* 4. features */}
-                <Step
-                  n={activePlan.coreSystemMode === "none" ? 3 : 4}
-                  title="Add the features you need"
-                  hint="Anything already included in your plan is marked — you are never charged for it twice."
-                >
-                  <div className="flex flex-col gap-8">
-                    {catalogue.categories.map((c) => {
-                      const items = sellable.filter((a) => a.categoryKey === c.key);
-                      if (!items.length) return null;
-                      return (
-                        <div key={c.key}>
-                          <div className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>{c.name}</div>
-                          {c.blurb && <p className="mt-0.5 text-sm" style={{ color: "var(--muted)" }}>{c.blurb}</p>}
-                          <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                            {items.map((a) => (
-                              <AddOnRow
-                                key={a.key}
-                                addOn={a}
-                                catalogue={catalogue}
-                                checked={selected.includes(a.key) || autoAddedKeys.has(a.key)}
-                                auto={autoAddedKeys.has(a.key) && !selected.includes(a.key)}
-                                includedFree={includedKeys.has(a.key)}
-                                onToggle={() => toggleAddOn(a.key)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Step>
-
-                {/* 5. contact */}
-                <Step
-                  n={activePlan.coreSystemMode === "none" ? 4 : 5}
-                  title="Send it to us"
-                  hint="We'll confirm the final price with you before anything starts. No payment is taken here."
-                >
-                  <form onSubmit={submit} className="flex flex-col gap-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Field label="Your name" required>
-                        <input className="in" required value={contact.contactName} onChange={(e) => setContact({ ...contact, contactName: e.target.value })} />
-                      </Field>
-                      <Field label="Business name">
-                        <input className="in" value={contact.businessName} onChange={(e) => setContact({ ...contact, businessName: e.target.value })} />
-                      </Field>
-                      <Field label="Phone / WhatsApp" required>
-                        <input className="in" required inputMode="tel" value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} />
-                      </Field>
-                      <Field label="Email">
-                        <input className="in" type="email" value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} />
-                      </Field>
-                    </div>
-                    {catalogue.businessTypes.length > 0 && (
-                      <Field label="Type of business">
-                        <select className="in" value={contact.businessType} onChange={(e) => setContact({ ...contact, businessType: e.target.value })}>
-                          <option value="">Select…</option>
-                          {catalogue.businessTypes.map((b) => <option key={b.key} value={b.name}>{b.name}</option>)}
-                        </select>
-                      </Field>
-                    )}
-                    <Field label="Anything else we should know?">
-                      <textarea className="in" rows={3} value={contact.notes} onChange={(e) => setContact({ ...contact, notes: e.target.value })} />
-                    </Field>
-
-                    {/* honeypot — hidden from people, filled by bots */}
-                    <input
-                      tabIndex={-1}
-                      autoComplete="off"
-                      aria-hidden
-                      value={contact.website}
-                      onChange={(e) => setContact({ ...contact, website: e.target.value })}
-                      style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}
-                    />
-
-                    {blocking.length > 0 && (
-                      <p className="text-sm" style={{ color: "var(--red, #c0392b)" }}>
-                        Please resolve the highlighted point above before sending.
-                      </p>
-                    )}
-                    {submitError && <p className="text-sm" style={{ color: "var(--red, #c0392b)" }}>{submitError}</p>}
-
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <button type="submit" className="btn btn-primary" disabled={busy || blocking.length > 0}>
-                        {busy ? "Sending…" : "Send my plan"}
+              {/* 5 — one-time services */}
+              <Step
+                n={at("onetime") + 1}
+                hidden={isHidden("onetime")}
+                title="Any one-time services?"
+                hint="Setup, design and data work. Charged once — never added to your monthly total."
+              >
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {catalogue.oneTime.map((o) => {
+                    const on = config.oneTimeKeys.includes(o.key);
+                    return (
+                      <button key={o.key} type="button" onClick={() => toggleOneTime(o.key)} className={`choice ${on ? "on" : ""}`} style={{ textAlign: "left" }}>
+                        <span className="box">{on && <Icon.check />}</span>
+                        <span style={{ flex: 1 }}>
+                          <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                            <span className="text-sm font-semibold">{o.name}</span>
+                            <span className="text-xs font-semibold" style={{ color: o.isQuote ? "var(--muted)" : "var(--orange)", fontFamily: "var(--font-display)" }}>
+                              {oneTimePrice(o)}
+                            </span>
+                          </span>
+                          {o.description && <span className="hint block" style={{ marginTop: 2 }}>{o.description}</span>}
+                        </span>
                       </button>
-                      <a href={waLink(quoteMessage(catalogue, quote))} target="_blank" rel="noreferrer" className="btn btn-wa">
-                        <Icon.whatsapp size={18} /> Send on WhatsApp
-                      </a>
-                    </div>
-                  </form>
-                </Step>
-              </div>
+                    );
+                  })}
+                </div>
+              </Step>
 
-            {/* ---------------- summary ---------------- */}
+              {/* 6 — send */}
+              <Step
+                n={at("send") + 1}
+                hidden={isHidden("send")}
+                title="Send us your website"
+                hint="We review the configuration and confirm the final price before anything starts. No payment is taken here."
+              >
+                <form onSubmit={submit} className="flex flex-col gap-4">
+                  <Field label="Anything else we should know?">
+                    <textarea className="in" rows={3} value={config.info.notes} onChange={(e) => setInfo({ notes: e.target.value })} />
+                  </Field>
+
+                  {blocked && (
+                    <p className="rounded-xl p-3 text-sm" style={{ background: "#fdecea", color: "#a5342a" }}>
+                      {quote.unmet[0].message}
+                    </p>
+                  )}
+                  {!canSubmit && !blocked && (
+                    <p className="text-sm" style={{ color: "var(--muted)" }}>Add your name and phone number to send this.</p>
+                  )}
+                  {submitError && <p className="text-sm" style={{ color: "#a5342a" }}>{submitError}</p>}
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button type="submit" className="btn btn-primary" disabled={busy || !canSubmit}>
+                      {busy ? "Sending…" : "Request This Website"}
+                    </button>
+                    <a href={waLink(quoteMessage(catalogue, quote, websiteType))} target="_blank" rel="noreferrer" className="btn btn-wa">
+                      <Icon.whatsapp size={18} /> Send Configuration on WhatsApp
+                    </a>
+                    <a href={waLink("Hi IGNIS, I'd like to talk about my website.")} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                      Talk to IGNIS
+                    </a>
+                  </div>
+                </form>
+              </Step>
+              {compact && (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ flex: 1 }}
+                    disabled={current === 0}
+                    onClick={() => { setStep(current - 1); window.scrollTo({ top: 0 }); }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-dark"
+                    style={{ flex: 1 }}
+                    disabled={current >= stepKeys.length - 1}
+                    onClick={() => { setStep(current + 1); window.scrollTo({ top: 0 }); }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+
             <Summary
               catalogue={catalogue}
               quote={quote}
-              requestedPlanName={requestedPlan.name}
-              onSwitchPlan={setPlanKey}
+              websiteType={websiteType}
+              onRemoveSystem={(key) => {
+                const s = catalogue.systems.find((x) => x.key === key);
+                if (s) requestRemoveSystem(s);
+              }}
+              onRemovePack={togglePack}
+              onRemoveOneTime={toggleOneTime}
+              onReset={() => setConfirmReset(true)}
             />
           </div>
         </div>
       </section>
 
-      {/* On a phone the summary is far below the choices, so the total follows
-          the customer down the page. */}
+      {/* Running total on phones */}
       <div className="builder-bar lg:hidden">
         <div>
-          <div className="text-xs" style={{ color: "rgba(255,255,255,.7)" }}>Estimated total</div>
+          <div className="text-xs" style={{ color: "rgba(255,255,255,.7)" }}>{websiteType}</div>
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "1.15rem" }}>
             {priceLabel(quote.monthlyTotal)}<span style={{ fontSize: ".8rem", fontWeight: 400, color: "rgba(255,255,255,.7)" }}>/month</span>
-            {quote.oneTimeTotal > 0 && <span style={{ fontSize: ".8rem", fontWeight: 400, color: "rgba(255,255,255,.7)" }}> + {priceLabel(quote.oneTimeTotal)} once</span>}
           </div>
         </div>
         <a href="#summary" className="btn btn-primary" style={{ padding: "0.6rem 1rem", fontSize: "0.85rem" }}>
-          {blocking.length > 0 ? "Fix 1 issue" : "See summary"}
+          {blocked ? "Fix 1 issue" : "View My Website"}
         </a>
       </div>
+
+      {/* --- prompts ---------------------------------------------------------- */}
+      {addSystemFor && (
+        <Modal title={`${addSystemFor.pack.name} needs another system`} onClose={() => setAddSystemFor(null)}>
+          <p className="text-sm" style={{ color: "var(--ink-2)" }}>
+            {addSystemFor.pack.requiresReason ??
+              `${addSystemFor.pack.name} needs ${addSystemFor.systems.map((s) => s.shortName).join(" or ")} to work.`}
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            {addSystemFor.systems.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={() => {
+                  addSystem(s.key);
+                  togglePack(addSystemFor.pack.key);
+                  setAddSystemFor(null);
+                }}
+              >
+                Add {s.name} for {priceLabel(s.price, true)}/month
+              </button>
+            ))}
+            <button type="button" className="btn btn-ghost btn-block" onClick={() => setAddSystemFor(null)}>
+              Cancel this feature
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {removeSystemFor && (
+        <Modal title={`Removing ${removeSystemFor.system.shortName}`} onClose={() => setRemoveSystemFor(null)}>
+          <p className="text-sm" style={{ color: "var(--ink-2)" }}>
+            Removing {removeSystemFor.system.name} will also remove{" "}
+            {removeSystemFor.lost.map((p) => p.name).join(" and ")}, because {removeSystemFor.lost.length > 1 ? "they need" : "it needs"} it to work.
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <button
+              type="button"
+              className="btn btn-dark btn-block"
+              onClick={() => {
+                removeSystem(removeSystemFor.system.key, removeSystemFor.lost.map((p) => p.key));
+                setRemoveSystemFor(null);
+              }}
+            >
+              Remove {removeSystemFor.system.shortName} and {removeSystemFor.lost.length} pack{removeSystemFor.lost.length > 1 ? "s" : ""}
+            </button>
+            <button type="button" className="btn btn-ghost btn-block" onClick={() => setRemoveSystemFor(null)}>Keep everything</button>
+          </div>
+        </Modal>
+      )}
+
+      {confirmReset && (
+        <Modal title="Start over?" onClose={() => setConfirmReset(false)}>
+          <p className="text-sm" style={{ color: "var(--ink-2)" }}>
+            This clears every system, pack and service you selected, and the details you entered.
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <button type="button" className="btn btn-dark btn-block" onClick={() => { reset(); setConfirmReset(false); }}>
+              Yes, start over
+            </button>
+            <button type="button" className="btn btn-ghost btn-block" onClick={() => setConfirmReset(false)}>Keep my configuration</button>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
+interface Done {
+  reference: string;
+  websiteType: string;
+  monthlyTotal: number;
+  oneTimeTotal: number;
+  needsQuotation: boolean;
+}
+
+function Step({
+  n, title, hint, hidden, children,
+}: { n: number; title: string; hint?: string; hidden?: boolean; children: React.ReactNode }) {
+  // On a phone the builder shows one step at a time; on a desktop every step is
+  // on screen at once and this is never set.
+  if (hidden) return null;
   return (
     <section>
       <div className="flex items-center gap-3">
@@ -355,164 +539,73 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-function CoreOption({ on, onClick, label, note, tag }: { on: boolean; onClick: () => void; label: string; note: string; tag?: string }) {
-  return (
-    <button type="button" onClick={onClick} className={`choice ${on ? "on" : ""}`} style={{ textAlign: "left" }}>
-      <span className="box">{on && <Icon.check />}</span>
-      <span>
-        <span className="block text-sm font-semibold">{label}</span>
-        <span className="hint block" style={{ marginTop: 0 }}>{note}</span>
-        {tag && <span className="mt-1 inline-block rounded-full px-2 py-0.5 text-xs" style={{ background: "var(--cream)", color: "var(--muted)" }}>{tag}</span>}
-      </span>
-    </button>
-  );
-}
-
-function AddOnRow({
-  addOn: a, catalogue, checked, auto, includedFree, onToggle,
-}: {
-  addOn: CatalogueAddOn; catalogue: Catalogue; checked: boolean; auto: boolean; includedFree: boolean; onToggle: () => void;
-}) {
-  const badges = addOnBadges(catalogue, a).filter((b) => b.tone !== "popular");
-  return (
-    <button type="button" onClick={onToggle} className={`choice ${checked ? "on" : ""}`} style={{ textAlign: "left", width: "100%" }}>
-      <span className="box">{checked && <Icon.check />}</span>
-      <span style={{ flex: 1 }}>
-        <span className="flex flex-wrap items-baseline justify-between gap-x-3">
-          <span className="text-sm font-semibold">{a.name}</span>
-          <span className="text-sm font-semibold" style={{ color: includedFree ? "var(--muted)" : "var(--orange)", fontFamily: "var(--font-display)" }}>
-            {includedFree ? "Included" : addOnPrice(a)}
-          </span>
-        </span>
-        {a.blurb && <span className="hint block" style={{ marginTop: 2 }}>{a.blurb}</span>}
-        {(auto || badges.length > 0) && (
-          <span className="mt-1.5 flex flex-wrap gap-1.5">
-            {auto && <Tag tone="auto">Added automatically</Tag>}
-            {badges.map((b) => <Tag key={b.label} tone={b.tone === "included" ? "included" : "plain"}>{b.label}</Tag>)}
-          </span>
-        )}
-      </span>
-    </button>
-  );
-}
-
-function Tag({ tone, children }: { tone: "auto" | "included" | "plain"; children: React.ReactNode }) {
+function Tag({ tone, children }: { tone: "on" | "plain" | "needs"; children: React.ReactNode }) {
   const style =
-    tone === "auto" ? { background: "var(--orange)", color: "#fff" }
-    : tone === "included" ? { background: "var(--peach)", color: "var(--orange)" }
+    tone === "on" ? { background: "var(--orange)", color: "#fff" }
+    : tone === "needs" ? { background: "var(--peach)", color: "var(--orange)" }
     : { background: "var(--cream)", color: "var(--muted)" };
   return <span className="rounded-full px-2 py-0.5 text-xs" style={style}>{children}</span>;
 }
 
-// ---------------------------------------------------------------------------
-
-function CapacityStep({
-  n, catalogue, planKey, coreSystem, capacities, setCapacities,
-}: {
-  n: number; catalogue: Catalogue; planKey: string; coreSystem: CoreSystem | null;
-  capacities: Record<string, number>; setCapacities: (v: Record<string, number>) => void;
-}) {
-  // Only dimensions this plan actually offers, and only where the chosen core
-  // system makes them meaningful.
-  const dims = catalogue.capacity.filter((c) => {
-    if (c.appliesToPlans.length && !c.appliesToPlans.includes(planKey)) return false;
-    if (c.requiresCoreSystem) {
-      if (!coreSystem) return false;
-      if (coreSystem !== "both" && !c.requiresCoreSystem.split("|").includes(coreSystem)) return false;
-    }
-    return allowanceFor(catalogue, planKey, c.key) != null;
-  });
-
-  if (!dims.length) return null;
-
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <Step n={n} title="How much do you need?" hint="Every plan comes with an allowance. Only what goes beyond it is charged.">
-      <div className="flex flex-col gap-3">
-        {dims.map((c) => {
-          const base = allowanceFor(catalogue, planKey, c.key)!;
-          const value = capacities[c.key] ?? base;
-          const steps = Math.max(0, Math.ceil((value - base) / c.stepSize));
-          const atMax = c.maxSteps != null && steps >= c.maxSteps;
-          const change = (delta: number) => {
-            const next = Math.max(base, value + delta * c.stepSize);
-            const capped = c.maxSteps != null ? Math.min(next, base + c.maxSteps * c.stepSize) : next;
-            setCapacities({ ...capacities, [c.key]: capped });
-          };
-          return (
-            <div key={c.key} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4" style={{ border: "1px solid var(--line)", background: "var(--paper)" }}>
-              <div style={{ minWidth: 200, flex: 1 }}>
-                <div className="text-sm font-semibold">{c.name}</div>
-                <div className="hint" style={{ marginTop: 2 }}>
-                  {base} {c.unitLabel} included · +{priceLabel(c.pricePerStep)}/month per {c.stepSize} {c.unitLabel}
-                </div>
-                {c.helpText && <div className="hint" style={{ marginTop: 2 }}>{c.helpText}</div>}
-              </div>
-              <div className="flex items-center gap-3">
-                <Stepper label={`Fewer ${c.unitLabel}`} disabled={steps === 0} onClick={() => change(-1)}>−</Stepper>
-                <div className="text-center" style={{ minWidth: 74 }}>
-                  <div className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>{value}</div>
-                  <div className="hint" style={{ marginTop: 0 }}>{steps ? `+${priceLabel(steps * c.pricePerStep)}/mo` : "included"}</div>
-                </div>
-                <Stepper label={`More ${c.unitLabel}`} disabled={atMax} onClick={() => change(1)}>+</Stepper>
-              </div>
-            </div>
-          );
-        })}
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "1.15rem" }}>{title}</h3>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ color: "var(--muted)", fontSize: "1.5rem", lineHeight: 1 }}>×</button>
+        </div>
+        <div className="mt-3">{children}</div>
       </div>
-    </Step>
-  );
-}
-
-function Stepper({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="grid place-items-center rounded-full"
-      style={{
-        width: 40, height: 40, fontSize: "1.2rem", lineHeight: 1,
-        border: `1.5px solid ${disabled ? "var(--line-2)" : "var(--line)"}`,
-        color: disabled ? "var(--line)" : "var(--ink)",
-        background: "var(--paper)",
-        cursor: disabled ? "not-allowed" : "pointer",
-      }}
-    >
-      {children}
-    </button>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
 
 function Summary({
-  catalogue, quote: q, requestedPlanName, onSwitchPlan,
+  catalogue, quote: q, websiteType, onRemoveSystem, onRemovePack, onRemoveOneTime, onReset,
 }: {
-  catalogue: Catalogue; quote: Quote; requestedPlanName: string; onSwitchPlan: (key: string) => void;
+  catalogue: Catalogue;
+  quote: Quote;
+  websiteType: string;
+  onRemoveSystem: (key: string) => void;
+  onRemovePack: (key: string) => void;
+  onRemoveOneTime: (key: string) => void;
+  onReset: () => void;
 }) {
-  const rec = q.recommendation;
-  const recPlanName = rec ? catalogue.plans.find((p) => p.key === rec.switchTo)?.name ?? rec.switchTo : null;
-
   return (
     <aside className="builder-summary" id="summary">
       <div className="card p-5" style={{ background: "var(--paper)" }}>
-        <div className="font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "1.1rem" }}>Your plan</div>
+        <div className="font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "1.1rem" }}>Your website</div>
+        <div className="text-sm" style={{ color: "var(--muted)" }}>{websiteType}</div>
 
-        {/* Anything the engine decided FOR the customer must be visible. */}
-        {q.upgrades.map((u) => (
-          <Note key={u.to} tone="attention">{u.message}</Note>
-        ))}
-        {q.autoAdded.map((a) => (
-          <Note key={a.key} tone="info">{a.message}</Note>
+        {q.unmet.map((u) => (
+          <div key={u.packKey} className="mt-3 rounded-xl p-3 text-sm" style={{ background: "#fdecea", color: "#a5342a" }}>
+            {u.message}
+          </div>
         ))}
         {q.issues.map((i) => (
-          <Note key={i.code + i.message} tone={i.blocking ? "blocking" : "attention"}>{i.message}</Note>
+          <div key={i.code + i.message} className="mt-3 rounded-xl p-3 text-sm" style={{ background: "var(--peach)", color: "var(--orange)" }}>
+            {i.message}
+          </div>
         ))}
 
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="mt-4 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)", fontFamily: "var(--font-display)" }}>
+          Monthly IGNIS subscription
+        </div>
+        <div className="mt-2 flex flex-col gap-2">
           {q.monthly.map((l) => (
-            <Line key={l.kind + l.key} label={l.label} detail={l.detail} amount={`${l.isFrom ? "from " : ""}${priceLabel(l.amount)}`} />
+            <Line
+              key={l.key}
+              label={l.label}
+              amount={priceLabel(l.amount, l.kind !== "base")}
+              onRemove={
+                l.kind === "system" ? () => onRemoveSystem(l.key)
+                : l.kind === "pack" ? () => onRemovePack(l.key)
+                : undefined
+              }
+            />
           ))}
         </div>
         <div className="mt-3 flex items-baseline justify-between border-t pt-3" style={{ borderColor: "var(--line)" }}>
@@ -521,88 +614,95 @@ function Summary({
             {priceLabel(q.monthlyTotal)}<span className="text-sm font-normal" style={{ color: "var(--muted)" }}>/month</span>
           </span>
         </div>
+        <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
+          Standard maximum {priceLabel(q.maxStandardMonthly)}/month.
+        </p>
 
-        {q.oneTime.length > 0 && (
+        {/* Limits, so the customer can see what the packs actually bought. */}
+        {q.limits.length > 0 && (
           <>
-            <div className="mt-5 text-sm font-semibold uppercase tracking-wider" style={{ color: "var(--muted)", fontFamily: "var(--font-display)" }}>One-time</div>
-            <div className="mt-2 flex flex-col gap-2">
-              {q.oneTime.map((l) => <Line key={l.key} label={l.label} detail={l.detail} amount={`${l.isFrom ? "from " : ""}${priceLabel(l.amount)}`} />)}
-            </div>
-            <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-sm font-semibold">One-time total</span>
-              <span className="font-semibold" style={{ fontFamily: "var(--font-display)" }}>{priceLabel(q.oneTimeTotal)}</span>
+            <Group title="Your limits" />
+            <div className="mt-2 flex flex-col gap-1.5">
+              {q.limits.map((l) => (
+                <div key={l.systemKey + l.key} className="flex items-baseline justify-between gap-3 text-sm">
+                  <span style={{ color: "var(--ink-2)" }}>{l.label}</span>
+                  <span style={{ color: l.upgraded ? "var(--orange)" : "var(--muted)", fontFamily: "var(--font-display)", fontWeight: 600 }}>
+                    {l.value} {l.unitLabel}{l.upgraded ? " ↑" : ""}
+                  </span>
+                </div>
+              ))}
             </div>
           </>
         )}
 
-        {q.included.length > 0 && (
-          <Group title="Already included">
-            {q.included.map((l) => <Line key={l.key} label={l.label} detail={l.detail} amount="Included" muted />)}
-          </Group>
+        {q.oneTime.length > 0 && (
+          <>
+            <Group title="One-time services" />
+            <div className="mt-2 flex flex-col gap-2">
+              {q.oneTime.map((l) => (
+                <Line
+                  key={l.key}
+                  label={l.label}
+                  amount={l.isQuote ? "Requires quotation" : priceLabel(l.amount ?? 0)}
+                  muted={l.isQuote}
+                  onRemove={() => onRemoveOneTime(l.key)}
+                />
+              ))}
+            </div>
+            {q.oneTimeTotal > 0 && (
+              <div className="mt-2 flex items-baseline justify-between text-sm">
+                <span className="font-semibold">One-time total</span>
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 600 }}>{priceLabel(q.oneTimeTotal)}</span>
+              </div>
+            )}
+          </>
         )}
 
-        {q.quoteItems.length > 0 && (
-          <Group title="We'll quote these">
-            {q.quoteItems.map((l) => <Line key={l.key} label={l.label} amount="By quotation" muted />)}
-          </Group>
+        {catalogue.external.length > 0 && (
+          <>
+            <Group title="External costs" />
+            <p className="mt-1 text-xs" style={{ color: "var(--muted)" }}>
+              Paid to other providers, never part of your IGNIS total: {catalogue.external.slice(0, 4).map((e) => e.name).join(", ")}
+              {catalogue.external.length > 4 ? ", and others where they apply." : "."}
+            </p>
+          </>
         )}
 
-        {q.external.length > 0 && (
-          <Group title="Paid to other providers">
-            {q.external.map((l) => <Line key={l.key} label={l.label} amount="Provider's price" muted />)}
-          </Group>
-        )}
+        <p className="mt-5 text-xs" style={{ color: "var(--muted)" }}>{text(catalogue, "builder.estimateNote")}</p>
 
-        {rec && recPlanName && (
-          <div className="mt-5 rounded-xl p-4" style={{ background: rec.kind === "saves" ? "var(--peach)" : "var(--cream)" }}>
-            <div className="text-sm" style={{ color: "var(--ink-2)" }}>{rec.message}</div>
-            <button type="button" onClick={() => onSwitchPlan(rec.switchTo)} className="btn btn-dark mt-3" style={{ padding: "0.6rem 1rem", fontSize: "0.85rem" }}>
-              {rec.kind === "saves" ? `Switch to ${recPlanName}` : `Try ${recPlanName}`}
-            </button>
-          </div>
-        )}
-
-        <p className="mt-5 text-xs" style={{ color: "var(--muted)" }}>
-          An estimate, not an invoice — we confirm the final price with you before any work begins.
-          {q.planKey !== q.requestedPlanKey && ` Priced on ${catalogue.plans.find((p) => p.key === q.planKey)?.name}, not ${requestedPlanName}.`}
-        </p>
+        <button type="button" onClick={onReset} className="mt-4 text-sm font-semibold" style={{ color: "var(--muted)" }}>
+          Start Over
+        </button>
       </div>
     </aside>
   );
 }
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({ title }: { title: string }) {
   return (
-    <>
-      <div className="mt-5 text-sm font-semibold uppercase tracking-wider" style={{ color: "var(--muted)", fontFamily: "var(--font-display)" }}>{title}</div>
-      <div className="mt-2 flex flex-col gap-2">{children}</div>
-    </>
-  );
-}
-
-function Line({ label, detail, amount, muted }: { label: string; detail?: string; amount: string; muted?: boolean }) {
-  return (
-    <div className="flex items-start justify-between gap-3 text-sm">
-      <span style={{ color: muted ? "var(--muted)" : "var(--ink-2)" }}>
-        {label}
-        {detail && <span className="block text-xs" style={{ color: "var(--muted)" }}>{detail}</span>}
-      </span>
-      <span className="whitespace-nowrap" style={{ color: muted ? "var(--muted)" : "var(--ink)", fontFamily: "var(--font-display)", fontWeight: 600 }}>{amount}</span>
+    <div className="mt-5 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)", fontFamily: "var(--font-display)" }}>
+      {title}
     </div>
   );
 }
 
-function Note({ tone, children }: { tone: "info" | "attention" | "blocking"; children: React.ReactNode }) {
-  const style =
-    tone === "blocking" ? { background: "#fdecea", color: "#a5342a" }
-    : tone === "attention" ? { background: "var(--peach)", color: "var(--orange)" }
-    : { background: "var(--cream)", color: "var(--ink-2)" };
-  return <div className="mt-3 rounded-xl p-3 text-sm" style={style}>{children}</div>;
+function Line({
+  label, amount, muted, onRemove,
+}: { label: string; amount: string; muted?: boolean; onRemove?: () => void }) {
+  return (
+    <div className="flex items-start justify-between gap-3 text-sm">
+      <span style={{ color: muted ? "var(--muted)" : "var(--ink-2)" }}>{label}</span>
+      <span className="flex items-center gap-2 whitespace-nowrap">
+        <span style={{ color: muted ? "var(--muted)" : "var(--ink)", fontFamily: "var(--font-display)", fontWeight: 600 }}>{amount}</span>
+        {onRemove && (
+          <button type="button" onClick={onRemove} aria-label={`Remove ${label}`} style={{ color: "var(--muted)", fontSize: "1.1rem", lineHeight: 1 }}>×</button>
+        )}
+      </span>
+    </div>
+  );
 }
 
-// ---------------------------------------------------------------------------
-
-function Confirmation({ done }: { done: { reference: string; monthlyTotal: number; oneTimeTotal: number; needsQuotation: boolean } }) {
+function Confirmation({ done }: { done: Done }) {
   return (
     <section className="section">
       <div className="container" style={{ maxWidth: 640 }}>
@@ -610,20 +710,21 @@ function Confirmation({ done }: { done: { reference: string; monthlyTotal: numbe
           <span className="mx-auto grid place-items-center" style={{ width: 64, height: 64, borderRadius: 999, background: "var(--peach)", color: "var(--orange)" }}>
             <Icon.check />
           </span>
-          <h1 className="mt-5" style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "1.6rem" }}>We've got your plan</h1>
+          <h1 className="mt-5" style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "1.6rem" }}>We've got your website</h1>
           <p className="mt-3" style={{ color: "var(--ink-2)" }}>
-            Your reference is <b style={{ color: "var(--ink)" }}>{done.reference}</b>. We'll be in touch to confirm the details and the final price.
+            Your reference is <b style={{ color: "var(--ink)" }}>{done.reference}</b>. We'll confirm the details and the final price with you.
           </p>
           <div className="mt-5 rounded-xl p-4" style={{ background: "var(--cream)" }}>
+            <div className="text-sm" style={{ color: "var(--muted)" }}>{done.websiteType}</div>
             <div className="font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: "1.3rem", color: "var(--orange)" }}>
               {priceLabel(done.monthlyTotal)}<span className="text-sm font-normal" style={{ color: "var(--muted)" }}>/month</span>
             </div>
             {done.oneTimeTotal > 0 && <div className="mt-1 text-sm" style={{ color: "var(--ink-2)" }}>plus {priceLabel(done.oneTimeTotal)} one-time</div>}
-            {done.needsQuotation && <div className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Some of what you chose needs a quotation — we'll price those with you.</div>}
+            {done.needsQuotation && <div className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Some of what you chose needs a quotation — we'll price that with you.</div>}
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link to="/" className="btn btn-dark">Back to home</Link>
-            <a href={waLink(`Hi IGNIS, I just sent plan ${done.reference}.`)} target="_blank" rel="noreferrer" className="btn btn-wa">
+            <a href={waLink(`Hi IGNIS, I just sent website configuration ${done.reference}.`)} target="_blank" rel="noreferrer" className="btn btn-wa">
               <Icon.whatsapp size={18} /> Message us
             </a>
           </div>

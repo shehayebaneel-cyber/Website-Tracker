@@ -36,6 +36,7 @@ import portalRouter from "./routes/portal.js";
 import publicRouter from "./routes/public.js";
 import publicPricingRouter from "./routes/publicPricing.js";
 import pricingAdminRouter from "./routes/pricingAdmin.js";
+import configurationsRouter from "./routes/configurations.js";
 import applicationsRouter from "./routes/applications.js";
 import { requireSection } from "./lib/perms.js";
 import { attachSalesContext } from "./lib/sales.js";
@@ -107,6 +108,7 @@ app.use("/api/commissions", attachSalesContext, commissionsRouter);
 app.use("/api/followups", attachSalesContext, followupsRouter);
 app.use("/api/payouts", attachSalesContext, payoutsRouter);
 app.use("/api/applications", requireSection("applications"), applicationsRouter);
+app.use("/api/configurations", requireSection("applications"), configurationsRouter);
 
 // In production, serve BOTH front-ends from the same origin as the API:
 //   /       -> public marketing site (public/dist)

@@ -31,6 +31,7 @@ const NAV: NavItem[] = [
   { to: "/sales/team", label: "Sales Team", icon: "◈", section: "salesTeam", group: "sales" },
   { to: "/sales/leads", label: "Leads", icon: "✦", section: "leads", group: "sales" },
   { to: "/sales/applications", label: "Applications", icon: "▤", section: "applications", group: "sales" },
+  { to: "/sales/website-requests", label: "Website Requests", icon: "◈", section: "applications", group: "sales" },
   { to: "/sales/clients", label: "My Clients", icon: "◍", section: "salesClients", group: "sales" },
   { to: "/sales/followups", label: "Follow-ups", icon: "◷", section: "followUps", group: "sales" },
   { to: "/sales/commissions", label: "Commissions", icon: "◎", section: "commissions", group: "sales" },
